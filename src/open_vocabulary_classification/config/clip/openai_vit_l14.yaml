@@ -1,0 +1,9 @@
+classifier:
+  backend: clip
+  weights_path: openai/clip-vit-large-patch14
+  image_pooling: class_token
+  text_templates:
+    - "a photo of a {}."
+  batch_size: 16
+  device: auto
+  is_half_precision_enabled: false
