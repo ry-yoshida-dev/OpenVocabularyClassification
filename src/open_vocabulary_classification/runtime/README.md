@@ -11,7 +11,7 @@ post-processing as NumPy arrays.
 
 | Component | Description |
 | --------- | ----------- |
-| [pytorch.py](./pytorch.py) | `TorchRuntime`: resolves `Device` to a `torch.device`, picks the dtype, and prepares models and inputs. |
+| [pytorch.py](./pytorch.py) | `TorchRuntime`: resolves `Device` to a `torch.device` and `Precision` to a dtype (rejecting `float16` on the CPU and unsupported `bfloat16` on CUDA), and prepares models and inputs. |
 
 ## Examples
 

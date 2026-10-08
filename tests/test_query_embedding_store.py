@@ -1,4 +1,5 @@
 import gc
+import threading
 from collections.abc import Sequence
 
 import torch
@@ -115,4 +116,29 @@ def test_prompt_larger_than_the_text_cache_is_embedded() -> None:
         store.embed(Prompt.from_class_names(("cat", "dog", "bird"))),
         torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.5**0.5, 0.5**0.5]]),
     )
+    assert embedder.embedded_sentences == [["cat", "dog", "bird"]]
+
+
+def test_embed_texts_shares_the_cache_with_prompts() -> None:
+    store, embedder = build_store()
+    torch.testing.assert_close(
+        store.embed_texts(["dog", "cat", "dog"]), torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+    )
+    store.embed(Prompt.from_class_names(("cat", "dog", "bird")))
+    assert embedder.embedded_sentences == [["dog", "cat"], ["bird"]]
+
+
+def test_concurrent_prompts_embed_each_text_once() -> None:
+    store, embedder = build_store()
+    barrier: threading.Barrier = threading.Barrier(8)
+
+    def embed() -> None:
+        barrier.wait()
+        store.embed(Prompt.from_class_names(("cat", "dog", "bird")))
+
+    threads: list[threading.Thread] = [threading.Thread(target=embed) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
     assert embedder.embedded_sentences == [["cat", "dog", "bird"]]

@@ -1,11 +1,13 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
 
-from .options import ClassifierBackend, Device, ImagePooling
-from .prompt import TextTemplates
+from ..options import ClassifierBackend, Device, ImagePooling, Precision
+from ..prompt import TextTemplates
+from .config_values import ConfigValues
 
 if TYPE_CHECKING:
-    from .classifier import OpenVocabularyClassifier
+    from ..classifier import OpenVocabularyClassifier
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -13,8 +15,8 @@ class ClassifierSettings:
     """
     Everything needed to load and run a classifier, identical for every backend.
 
-    The fields map one-to-one onto the ``classifier`` section of the YAML presets in this package,
-    so a preset can be turned into settings by any dataclass builder (enums are written by value).
+    The fields map one-to-one onto the ``classifier`` section of the YAML presets in this package (enums written by
+    value), read by ``from_mapping`` or ``PresetCatalog``.
 
     Attributes
     ----------
@@ -30,8 +32,8 @@ class ClassifierSettings:
         Number of images per forward pass.
     device : Device
         Device to run on.
-    is_half_precision_enabled : bool
-        Whether to run the model in float16; GPU only.
+    precision : Precision
+        Floating-point type of the model weights; ``float16`` needs a GPU.
 
     Raises
     ------
@@ -46,7 +48,7 @@ class ClassifierSettings:
     text_templates: tuple[str, ...] = ("{}",)
     batch_size: int = 8
     device: Device = Device.AUTO
-    is_half_precision_enabled: bool = False
+    precision: Precision = Precision.FLOAT32
 
     def __post_init__(self) -> None:
         if not self.weights_path.strip():
@@ -59,6 +61,50 @@ class ClassifierSettings:
                 + f"supported: {sorted(pooling.value for pooling in self.backend.supported_image_poolings)}"
             )
         TextTemplates(self.text_templates)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, object]) -> "ClassifierSettings":
+        """
+        Build settings from plain values, e.g. the ``classifier`` section of a parsed YAML or JSON document.
+
+        Enums are given by value (``backend: siglip``) and ``text_templates`` as a list; omitted optional fields take
+        their defaults.
+
+        Parameters
+        ----------
+        values : Mapping[str, object]
+            Field values keyed by field name.
+
+        Returns
+        -------
+        ClassifierSettings
+            Validated settings.
+
+        Raises
+        ------
+        KeyError
+            If a required field is missing or an unknown field is given.
+        TypeError
+            If a value has the wrong type.
+        ValueError
+            If an enum value is unknown or the settings are invalid.
+        """
+        config_values: ConfigValues = ConfigValues(values)
+        config_values.validate_keys(frozenset(field.name for field in fields(cls)))
+        required: ClassifierSettings = cls(
+            backend=config_values.member("backend", ClassifierBackend),
+            weights_path=config_values.text("weights_path"),
+            image_pooling=config_values.member("image_pooling", ImagePooling),
+        )
+        return cls(
+            backend=required.backend,
+            weights_path=required.weights_path,
+            image_pooling=required.image_pooling,
+            text_templates=config_values.texts("text_templates", required.text_templates),
+            batch_size=config_values.integer("batch_size", required.batch_size),
+            device=config_values.member("device", Device, required.device),
+            precision=config_values.member("precision", Precision, required.precision),
+        )
 
     def build(self) -> "OpenVocabularyClassifier":
         """
@@ -79,10 +125,10 @@ class ClassifierSettings:
         """
         match self.backend:
             case ClassifierBackend.CLIP:
-                from .backends.clip import ClipArchitecture
+                from ..backends.clip import ClipArchitecture
 
                 return ClipArchitecture.of_checkpoint(self.weights_path).build(self)
             case ClassifierBackend.SIGLIP:
-                from .backends.siglip import SiglipArchitecture
+                from ..backends.siglip import SiglipArchitecture
 
                 return SiglipArchitecture.of_checkpoint(self.weights_path).build(self)

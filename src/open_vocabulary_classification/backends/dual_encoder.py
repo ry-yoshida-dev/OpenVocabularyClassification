@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Sequence
+from itertools import batched
 from typing import ClassVar
 
 import numpy as np
@@ -21,8 +22,10 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
     into one space where the scaled cosine similarity (plus a bias for SigLIP) is the logit.
 
     Text queries are embedded through the text templates and cached per query; visual queries are embedded by the
-    image tower with the configured pooling and cached per reference. Subclasses load the model and processor,
-    encode sentences and pooled images, and expose the logit scale and bias of their model.
+    image tower with the configured pooling and cached per reference. The logit scale and bias are read from the model
+    once after loading, before the model is cast to ``settings.precision``, so a half-precision model scores with the
+    exact learned values. Subclasses load the model and processor, encode sentences and pooled images, and read the
+    logit scale and bias of their model.
     """
 
     TEXT_BATCH_SIZE: ClassVar[int] = 256
@@ -41,10 +44,10 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         self._runtime: TorchRuntime = TorchRuntime(settings)
         self._processor: ProcessorT = self._load_processor(settings.weights_path)
         self._model: ModelT = self._load_model(settings.weights_path)
-        self._runtime.prepare_model(self._model)
         with torch.inference_mode():
             self._logit_scale: float = self._read_logit_scale()
             self._logit_bias: float = self._read_logit_bias()
+        self._runtime.prepare_model(self._model)
         self._query_embeddings: QueryEmbeddingStore = QueryEmbeddingStore(
             embed_sentences=self._embed_sentences,
             embed_references=self._embed_references,
@@ -101,7 +104,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         """
         Read the factor turning cosine similarities into logits from the loaded model.
 
-        Called once after loading, in inference mode.
+        Called once after loading, before the model is moved and cast to the runtime precision, in inference mode.
 
         Returns
         -------
@@ -114,7 +117,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         """
         Read the offset added to the scaled similarities from the loaded model.
 
-        Called once after loading, in inference mode.
+        Called once after loading, before the model is moved and cast to the runtime precision, in inference mode.
 
         Returns
         -------
@@ -158,14 +161,38 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
             Unnormalized text embeddings in the joint space, shape (S, D).
         """
 
+    @property
+    def logit_scale(self) -> float:
+        """
+        Factor turning cosine similarities into logits, read from the model once after loading.
+
+        Returns
+        -------
+        float
+            Exponentiated learned temperature of the model.
+        """
+        return self._logit_scale
+
+    @property
+    def logit_bias(self) -> float:
+        """
+        Offset added to the scaled cosine similarities, read from the model once after loading.
+
+        Returns
+        -------
+        float
+            Learned bias of the model, ``0.0`` for a model without one.
+        """
+        return self._logit_bias
+
     def _embed_mini_batch(self, images: Sequence[Image.Image]) -> FloatArray:
         return self._to_array(self._embed_image_tensor(images))
 
-    def _score_mini_batch(self, images: Sequence[Image.Image], prompt: Prompt) -> FloatArray:
-        image_embeddings: torch.Tensor = self._embed_image_tensor(images)
-        query_embeddings: torch.Tensor = self._query_embeddings.embed(prompt).to(image_embeddings.device)
-        logits: torch.Tensor = image_embeddings @ query_embeddings.T * self._logit_scale + self._logit_bias
-        return self._to_array(logits)
+    def _embed_texts(self, texts: Sequence[str]) -> FloatArray:
+        return self._to_array(self._query_embeddings.embed_texts(texts))
+
+    def _embed_prompt(self, prompt: Prompt) -> FloatArray:
+        return self._to_array(self._query_embeddings.embed(prompt))
 
     def _embed_image_tensor(self, images: Sequence[Image.Image]) -> torch.Tensor:
         with torch.inference_mode():
@@ -182,7 +209,8 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
 
     def _embed_references(self, references: Sequence[VisualReference]) -> torch.Tensor:
         images: list[Image.Image] = [self._to_rgb(reference.image) for reference in references]
-        return torch.cat([self._embed_image_tensor(mini_batch) for mini_batch in self._mini_batches(images)], dim=0)
+        mini_batches: list[tuple[Image.Image, ...]] = list(batched(images, self.batch_size))
+        return torch.cat([self._embed_image_tensor(mini_batch) for mini_batch in mini_batches], dim=0)
 
     def _tokenize(self, sentences: Sequence[str]) -> BatchEncoding:
         """
@@ -204,14 +232,17 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
             If a sentence does not fit in ``_text_token_limit`` tokens.
         """
         encoding: BatchEncoding = self._processor.tokenizer(
-            list(sentences), padding="max_length", max_length=self._text_token_limit, return_tensors="pt"
+            list(sentences), padding="max_length", max_length=self._text_token_limit
         )
-        token_count: int = int(encoding["input_ids"].shape[1])
+        token_ids: list[list[int]] = encoding["input_ids"]
+        longest_sentence: int = max(range(len(token_ids)), key=lambda index: len(token_ids[index]))
+        token_count: int = len(token_ids[longest_sentence])
         if token_count > self._text_token_limit:
             raise ValueError(
                 f"text queries filled into the templates must fit in {self._text_token_limit} tokens. "
-                + f"got {token_count} tokens"
+                + f"got {token_count} tokens for {sentences[longest_sentence]!r}"
             )
+        encoding.convert_to_tensors("pt")
         return encoding.to(self._runtime.device)
 
     @staticmethod

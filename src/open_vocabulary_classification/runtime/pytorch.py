@@ -1,6 +1,6 @@
 import torch
 
-from ..options import Device
+from ..options import Device, Precision
 from ..settings import ClassifierSettings
 
 
@@ -22,14 +22,12 @@ class TorchRuntime:
         Raises
         ------
         RuntimeError
-            If an explicitly requested GPU backend is unavailable.
+            If an explicitly requested GPU backend, or bfloat16 on CUDA, is unavailable.
         ValueError
-            If half precision is requested and the device resolves to the CPU.
+            If float16 is requested and the device resolves to the CPU.
         """
         self._device: torch.device = self._resolve_device(settings.device)
-        if settings.is_half_precision_enabled and self._device.type == Device.CPU:
-            raise ValueError("half precision is not supported on the CPU.")
-        self._dtype: torch.dtype = torch.float16 if settings.is_half_precision_enabled else torch.float32
+        self._dtype: torch.dtype = self._resolve_dtype(settings.precision, self._device)
 
     @property
     def device(self) -> torch.device:
@@ -51,7 +49,7 @@ class TorchRuntime:
         Returns
         -------
         torch.dtype
-            ``torch.float16`` with half precision, otherwise ``torch.float32``.
+            ``torch.float32``, ``torch.float16`` or ``torch.bfloat16`` as ``settings.precision`` says.
         """
         return self._dtype
 
@@ -118,3 +116,17 @@ class TorchRuntime:
                 if not torch.backends.mps.is_available():
                     raise RuntimeError("MPS was requested but is not available.")
                 return torch.device(Device.MPS)
+
+    @staticmethod
+    def _resolve_dtype(precision: Precision, device: torch.device) -> torch.dtype:
+        match precision:
+            case Precision.FLOAT32:
+                return torch.float32
+            case Precision.FLOAT16:
+                if device.type == Device.CPU:
+                    raise ValueError("float16 is not supported on the CPU; use bfloat16 or float32.")
+                return torch.float16
+            case Precision.BFLOAT16:
+                if device.type == Device.CUDA and not torch.cuda.is_bf16_supported():
+                    raise RuntimeError("bfloat16 was requested but the CUDA device does not support it.")
+                return torch.bfloat16

@@ -42,6 +42,22 @@ class ClassifierBackend(StrEnum):
                 return frozenset({ImagePooling.ATTENTION, ImagePooling.PATCH_MEAN})
 
     @property
+    def trained_image_pooling(self) -> ImagePooling:
+        """
+        Pooling the vision encoder of the family was trained with, used by every preset.
+
+        Returns
+        -------
+        ImagePooling
+            ``CLASS_TOKEN`` for CLIP, ``ATTENTION`` for SigLIP.
+        """
+        match self:
+            case ClassifierBackend.CLIP:
+                return ImagePooling.CLASS_TOKEN
+            case ClassifierBackend.SIGLIP:
+                return ImagePooling.ATTENTION
+
+    @property
     def score_activation(self) -> ScoreActivation:
         """
         Activation matching the training loss of the family.

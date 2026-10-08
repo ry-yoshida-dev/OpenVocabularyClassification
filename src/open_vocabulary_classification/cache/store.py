@@ -18,7 +18,7 @@ class QueryEmbeddingStore:
     ensembling); a visual query averages the normalized embeddings of its references. Prompts sharing text queries
     or references reuse the cached embeddings; only the cheap assembly runs per prompt. At most
     ``text_cache_capacity`` text queries are kept, the least recently used dropped first; reference embeddings are
-    held weakly, so they are dropped together with their reference.
+    held weakly, so they are dropped together with their reference. Both caches are thread-safe.
 
     Attributes
     ----------
@@ -65,6 +65,22 @@ class QueryEmbeddingStore:
         texts: list[str] = [query.text for query in prompt.queries if isinstance(query, TextQuery)]
         text_embeddings: dict[str, torch.Tensor] = dict(zip(texts, self._texts.get(texts), strict=True))
         return torch.stack([self._embed_query(query, text_embeddings) for query in prompt.queries])
+
+    def embed_texts(self, texts: Sequence[str]) -> torch.Tensor:
+        """
+        Embedding of text queries, ensembled over the templates exactly as the text queries of a prompt.
+
+        Parameters
+        ----------
+        texts : Sequence[str]
+            Text queries; repeated texts are embedded once.
+
+        Returns
+        -------
+        torch.Tensor
+            L2-normalized float32 embeddings in input order, shape (T, D).
+        """
+        return torch.stack(self._texts.get(texts))
 
     def _embed_query(self, query: PromptQuery, text_embeddings: Mapping[str, torch.Tensor]) -> torch.Tensor:
         match query:

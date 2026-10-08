@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
-from ..prompt import PromptQuery
+from ..prompt import PromptQuery, TextQuery, VisualQuery
+from .classification_record import ClassificationRecord
 
 
 @dataclass(frozen=True)
@@ -27,3 +28,29 @@ class Classification:
     score: float
     logit: float
     matched_query: PromptQuery
+
+    def to_record(self) -> ClassificationRecord:
+        """
+        Convert to plain values, e.g. to write JSON lines.
+
+        Returns
+        -------
+        ClassificationRecord
+            Flat, JSON-serializable copy; reference images are summarized by their count.
+        """
+        match self.matched_query:
+            case TextQuery(text=text):
+                matched_query_text: str | None = text
+                matched_query_reference_count: int | None = None
+            case VisualQuery(references=references):
+                matched_query_text = None
+                matched_query_reference_count = len(references)
+        return ClassificationRecord(
+            class_id=self.class_id,
+            class_name=self.class_name,
+            score=self.score,
+            logit=self.logit,
+            matched_query_kind=self.matched_query.kind.value,
+            matched_query_text=matched_query_text,
+            matched_query_reference_count=matched_query_reference_count,
+        )

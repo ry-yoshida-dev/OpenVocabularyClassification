@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from ..kind import PromptKind
 from ..visual_reference import VisualReference
 
 
@@ -29,3 +30,15 @@ class VisualQuery:
             raise ValueError("a visual query needs at least one reference.")
         if len(set(self.references)) != len(self.references):
             raise ValueError("a visual query must not repeat a reference.")
+
+    @property
+    def kind(self) -> PromptKind:
+        """
+        Kind of the query.
+
+        Returns
+        -------
+        PromptKind
+            ``VISUAL``.
+        """
+        return PromptKind.VISUAL

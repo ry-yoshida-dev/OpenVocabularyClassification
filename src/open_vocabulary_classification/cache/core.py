@@ -1,5 +1,6 @@
 from collections.abc import Callable, Hashable, MutableMapping, Sequence
 from dataclasses import dataclass, field
+from threading import Lock
 
 
 @dataclass
@@ -12,6 +13,9 @@ class EmbeddingCache[KeyT: Hashable, ValueT]:
     ``WeakKeyDictionary`` drops them together with their key. Values are returned even when the storage evicts them
     while a call stores them.
 
+    Lookups are serialized by a lock, so threads sharing a classifier never corrupt the storage (a
+    ``LeastRecentlyUsedMapping`` reorders entries even on reads) and compute each missing key only once.
+
     Attributes
     ----------
     compute : Callable[[Sequence[KeyT]], Sequence[ValueT]]
@@ -22,6 +26,7 @@ class EmbeddingCache[KeyT: Hashable, ValueT]:
 
     compute: Callable[[Sequence[KeyT]], Sequence[ValueT]]
     entries: MutableMapping[KeyT, ValueT] = field(repr=False)
+    _lock: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
 
     def get(self, keys: Sequence[KeyT]) -> list[ValueT]:
         """
@@ -42,18 +47,19 @@ class EmbeddingCache[KeyT: Hashable, ValueT]:
         ValueError
             If ``compute`` does not return one value per missing key.
         """
-        values_by_key: dict[KeyT, ValueT] = {}
-        missing_keys: list[KeyT] = []
-        for key in dict.fromkeys(keys):
-            if key in self.entries:
-                values_by_key[key] = self.entries[key]
-            else:
-                missing_keys.append(key)
-        if missing_keys:
-            values: Sequence[ValueT] = self.compute(missing_keys)
-            if len(values) != len(missing_keys):
-                raise ValueError(f"expected {len(missing_keys)} computed values. got {len(values)}")
-            computed_values: dict[KeyT, ValueT] = dict(zip(missing_keys, values, strict=True))
-            self.entries.update(computed_values)
-            values_by_key.update(computed_values)
-        return [values_by_key[key] for key in keys]
+        with self._lock:
+            values_by_key: dict[KeyT, ValueT] = {}
+            missing_keys: list[KeyT] = []
+            for key in dict.fromkeys(keys):
+                if key in self.entries:
+                    values_by_key[key] = self.entries[key]
+                else:
+                    missing_keys.append(key)
+            if missing_keys:
+                values: Sequence[ValueT] = self.compute(missing_keys)
+                if len(values) != len(missing_keys):
+                    raise ValueError(f"expected {len(missing_keys)} computed values. got {len(values)}")
+                computed_values: dict[KeyT, ValueT] = dict(zip(missing_keys, values, strict=True))
+                self.entries.update(computed_values)
+                values_by_key.update(computed_values)
+            return [values_by_key[key] for key in keys]

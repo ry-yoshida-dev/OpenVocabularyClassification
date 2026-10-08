@@ -76,6 +76,21 @@ GEMMA_VOCABULARY: dict[str, int] = {
 GEMMA_MERGES: list[str] = ["c a", "ca t", "d o", "do g"]
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-pretrained", action="store_true", help="run tests downloading real model weights (marker pretrained)"
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--run-pretrained"):
+        return
+    skip_pretrained: pytest.MarkDecorator = pytest.mark.skip(reason="needs --run-pretrained")
+    for item in items:
+        if "pretrained" in item.keywords:
+            item.add_marker(skip_pretrained)
+
+
 def write_vocabulary(directory: Path, vocabulary: dict[str, int], merges: list[str]) -> tuple[str, str]:
     directory.mkdir(parents=True)
     vocabulary_path: Path = directory / "vocab.json"

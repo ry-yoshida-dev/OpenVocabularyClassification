@@ -5,10 +5,11 @@
 Ready-made YAML presets of every supported model, one folder per `ClassifierBackend` value, named by source, model
 size and input resolution (e.g. `openai_vit_l14_336`, `v2_so400m_patch16_naflex`).
 
-Each preset's `classifier` section maps one-to-one onto the fields of [`ClassifierSettings`](../settings.py) (enums
-written by value, `text_templates` as a list), so it can be built with any dataclass builder such as
-`DictConfigHandler.build_dataclass(ClassifierSettings, key="classifier")`. Switching models means switching preset
-files. Every preset uses the pooling its model was trained with (`class_token` for CLIP, `attention` for SigLIP);
+Each preset's `classifier` section maps one-to-one onto the fields of
+[`ClassifierSettings`](../settings/core.py) (enums written by value, `text_templates` as a list).
+[`PresetCatalog`](../settings/presets.py) loads a preset by backend and name, or any YAML file in this format;
+`ClassifierSettings.from_mapping` or any dataclass builder reads the section from other configuration systems.
+Switching models means switching preset files. Every preset uses the pooling its model was trained with (`class_token` for CLIP, `attention` for SigLIP);
 set `image_pooling: patch_mean` to use global average pooling of the patch tokens instead.
 
 | Folder | Presets |
@@ -29,8 +30,13 @@ classifier:
     - "a close-up photo of a {}."
   batch_size: 32
   device: auto
-  is_half_precision_enabled: false
+  precision: float32
+```
+
+```python
+settings = PresetCatalog.load(ClassifierBackend.CLIP, "openai_vit_b16")
 ```
 
 A preset is a starting point: copy it into an application config to change the pooling, templates, device or
-precision, or point `weights_path` at fine-tuned or local weights of the same backend.
+precision (`bfloat16` keeps large models such as `v2_giant_opt_patch16_384` stable at half the memory), or point
+`weights_path` at fine-tuned or local weights of the same backend.

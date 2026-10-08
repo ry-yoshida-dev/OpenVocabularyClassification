@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from ..kind import PromptKind
+
 
 @dataclass(frozen=True)
 class TextQuery:
@@ -24,3 +26,15 @@ class TextQuery:
         if not stripped_text:
             raise ValueError("text must not be blank.")
         object.__setattr__(self, "text", stripped_text)
+
+    @property
+    def kind(self) -> PromptKind:
+        """
+        Kind of the query.
+
+        Returns
+        -------
+        PromptKind
+            ``TEXT``.
+        """
+        return PromptKind.TEXT

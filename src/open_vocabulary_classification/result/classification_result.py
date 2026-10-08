@@ -8,6 +8,7 @@ from ..array_types import FloatArray, IntArray
 from ..options import ScoreActivation
 from ..prompt import Prompt
 from .classification import Classification
+from .classification_record import ClassificationRecord
 
 
 @dataclass(frozen=True, eq=False)
@@ -197,6 +198,49 @@ class ClassificationResult:
             for class_id in self._ranked_class_ids()
             if self.scores[class_id] >= threshold
         )
+
+    def filter_by_logit(self, threshold: float) -> tuple[Classification, ...]:
+        """
+        Classes whose logit reaches a threshold, independent of the other classes of the prompt.
+
+        A softmax score (CLIP) is relative: one class always takes most of the score, even when the image shows none
+        of the classes. The logit is the scaled cosine similarity of the image and the best query of the class, so a
+        threshold on it, chosen on real data, rejects images matching no class and is comparable across prompts of
+        the same classifier.
+
+        Parameters
+        ----------
+        threshold : float
+            Minimum logit.
+
+        Returns
+        -------
+        tuple[Classification, ...]
+            Classes with ``logit >= threshold`` by descending score.
+
+        Raises
+        ------
+        ValueError
+            If ``threshold`` is not finite.
+        """
+        if not np.isfinite(threshold):
+            raise ValueError(f"threshold must be finite. got {threshold}")
+        return tuple(
+            self.classification(int(class_id))
+            for class_id in self._ranked_class_ids()
+            if self.class_logits[class_id] >= threshold
+        )
+
+    def to_records(self) -> list[ClassificationRecord]:
+        """
+        Convert every class to plain values, e.g. to write JSON lines or build a data frame.
+
+        Returns
+        -------
+        list[ClassificationRecord]
+            One flat, JSON-serializable record per class, in class-id order.
+        """
+        return [classification.to_record() for classification in self]
 
     def _ranked_class_ids(self) -> IntArray:
         return np.argsort(-self.scores, kind="stable").astype(np.int64)

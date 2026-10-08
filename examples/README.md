@@ -2,18 +2,17 @@
 
 ## Overview
 
-Runnable scripts using the package.
+Runnable scripts using the package. To classify a directory from the command line, use the installed
+`open-vocabulary-classify` command (see [cli/](../src/open_vocabulary_classification/cli/README.md)).
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [classify_directory.py](./classify_directory.py) | Classifies every image of a directory with any backend, weights, pooling and templates, reading one mini-batch of EXIF-oriented images at a time; `name:query,query` gives a class several text queries, and a repeated class collects the queries of every argument. |
+| [search_images.py](./search_images.py) | Embeds a directory once with `iter_embed_images`, searches it by text with `embed_texts`, and classifies the same embeddings with two prompts through `classify_embeddings`. |
 
 ## Examples
 
 ```bash
-python examples/classify_directory.py images/ --backend clip --weights openai/clip-vit-base-patch16 --classes cat dog bus
-python examples/classify_directory.py images/ --backend siglip --weights google/siglip2-base-patch16-naflex \
-    --pooling patch_mean --templates "a photo of a {}." "a close-up photo of a {}." --classes "dog:dog,puppy" cat
+python examples/search_images.py images/ --preset siglip/v2_base_patch16_224 --query "a dog on a beach" --top-k 5
 ```

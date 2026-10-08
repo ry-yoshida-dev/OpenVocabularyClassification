@@ -1,12 +1,18 @@
+import json
+
 import numpy as np
 import pytest
+from PIL import Image
 
 from open_vocabulary_classification import (
     Classification,
+    ClassificationRecord,
     ClassificationResult,
     Prompt,
     ScoreActivation,
     TextQuery,
+    VisualQuery,
+    VisualReference,
 )
 from open_vocabulary_classification.array_types import FloatArray
 
@@ -80,3 +86,34 @@ def test_arrays_are_read_only_copies() -> None:
     for array in (result.query_logits, result.class_logits, result.matched_query_ids, result.scores):
         with pytest.raises(ValueError, match="read-only"):
             array[0] = 0
+
+
+def test_filter_by_logit_is_independent_of_other_classes() -> None:
+    result: ClassificationResult = build_result(ScoreActivation.SOFTMAX)
+    assert [classification.class_name for classification in result.filter_by_logit(2.0)] == ["dog", "cat"]
+    assert result.filter_by_logit(5.0) == ()
+    with pytest.raises(ValueError, match="finite"):
+        result.filter_by_logit(float("nan"))
+
+
+def test_records_are_json_serializable() -> None:
+    references: tuple[VisualReference, ...] = tuple(VisualReference(Image.new("RGB", (4, 4))) for _ in range(2))
+    prompt: Prompt = Prompt({"dog": (TextQuery("dog"),), "my dog": (VisualQuery(references),)})
+    result: ClassificationResult = ClassificationResult(
+        prompt=prompt, query_logits=np.array([1.0, 2.0]), score_activation=ScoreActivation.SIGMOID
+    )
+    records: list[ClassificationRecord] = result.to_records()
+    assert records[0]["score"] == pytest.approx(1.0 / (1.0 + np.exp(-1.0)))
+    assert records[0] == ClassificationRecord(
+        class_id=0,
+        class_name="dog",
+        score=float(result.scores[0]),
+        logit=1.0,
+        matched_query_kind="text",
+        matched_query_text="dog",
+        matched_query_reference_count=None,
+    )
+    assert records[1]["matched_query_kind"] == "visual"
+    assert records[1]["matched_query_text"] is None
+    assert records[1]["matched_query_reference_count"] == 2
+    assert json.loads(json.dumps(records)) == records

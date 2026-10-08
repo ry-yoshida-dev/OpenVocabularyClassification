@@ -23,7 +23,9 @@ from open_vocabulary_classification import (
     ClassifierSettings,
     Device,
     ImagePooling,
+    ImageTiling,
     OpenVocabularyClassifier,
+    Precision,
     Prompt,
     VisualQuery,
     VisualReference,
@@ -198,3 +200,63 @@ def test_text_queries_longer_than_the_text_tower_raise(checkpoint_directory: Pat
     classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name)
     with pytest.raises(ValueError, match="must fit in 12 tokens"):
         classifier.classify(IMAGES[0], Prompt.from_class_names((" ".join(["cat"] * 20),)))
+    with pytest.raises(ValueError, match=r"must fit in 12 tokens. got \d+ tokens for '(cat ){19}cat'"):
+        classifier.embed_texts([" ".join(["cat"] * 14), " ".join(["cat"] * 20), "dog"])
+
+
+@pytest.mark.parametrize("name", list(BACKENDS))
+def test_classify_embeddings_matches_classify_images(checkpoint_directory: Path, name: str) -> None:
+    classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name, batch_size=2)
+    prompt: Prompt = Prompt.from_class_names(CLASS_NAMES)
+    from_embeddings: list[ClassificationResult] = classifier.classify_embeddings(
+        classifier.embed_images(IMAGES), prompt
+    )
+    from_images: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt)
+    np.testing.assert_allclose(
+        np.stack([result.query_logits for result in from_embeddings]),
+        np.stack([result.query_logits for result in from_images]),
+        atol=1e-5,
+    )
+
+
+@pytest.mark.parametrize("name", list(BACKENDS))
+def test_embed_texts_matches_the_model_text_features(checkpoint_directory: Path, name: str) -> None:
+    model, processor = load_reference_model(checkpoint_directory, name)
+    with torch.inference_mode():
+        tokens: BatchEncoding = processor.tokenizer(
+            list(CLASS_NAMES), padding="max_length", max_length=12, return_tensors="pt"
+        )
+        if BACKENDS[name] is ClassifierBackend.SIGLIP:
+            tokens.pop("attention_mask", None)
+        expected: FloatArray = normalized(pooled_output(model.get_text_features(**tokens)))
+    classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name)
+    np.testing.assert_allclose(classifier.embed_texts(CLASS_NAMES), expected, atol=1e-5)
+    np.testing.assert_allclose(classifier.embed_prompt(Prompt.from_class_names(CLASS_NAMES)), expected, atol=1e-5)
+
+
+@pytest.mark.parametrize("name", list(BACKENDS))
+def test_tiling_never_lowers_the_whole_image_logits(checkpoint_directory: Path, name: str) -> None:
+    classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name)
+    prompt: Prompt = Prompt.from_class_names(CLASS_NAMES)
+    whole: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt)
+    tiled: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt, ImageTiling(grid_size=2))
+    for whole_result, tiled_result in zip(whole, tiled, strict=True):
+        assert np.all(tiled_result.query_logits >= whole_result.query_logits - 1e-5)
+
+
+@pytest.mark.parametrize("name", list(BACKENDS))
+def test_bfloat16_embeddings_stay_close_to_float32(checkpoint_directory: Path, name: str) -> None:
+    backend: ClassifierBackend = BACKENDS[name]
+    classifier: OpenVocabularyClassifier = ClassifierSettings(
+        backend=backend,
+        weights_path=str(checkpoint_directory / name),
+        image_pooling=backend.trained_image_pooling,
+        device=Device.CPU,
+        precision=Precision.BFLOAT16,
+    ).build()
+    embeddings: FloatArray = classifier.embed_images(IMAGES)
+    assert embeddings.dtype == np.float64
+    float32_classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name)
+    assert classifier.logit_scale == float32_classifier.logit_scale
+    assert classifier.logit_bias == float32_classifier.logit_bias
+    np.testing.assert_allclose(embeddings, build_classifier(checkpoint_directory, name).embed_images(IMAGES), atol=0.05)

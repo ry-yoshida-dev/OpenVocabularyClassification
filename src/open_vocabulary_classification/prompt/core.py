@@ -112,7 +112,7 @@ class Prompt:
         frozenset[PromptKind]
             ``TEXT`` if any text query is given, ``VISUAL`` if any visual query is given.
         """
-        return frozenset(self._kind_of(query) for query in self.queries)
+        return frozenset(query.kind for query in self.queries)
 
     @property
     def class_query_ids(self) -> tuple[IntArray, ...]:
@@ -126,14 +126,6 @@ class Prompt:
         """
         query_class_ids: IntArray = np.array(self.query_class_ids, dtype=np.int64)
         return tuple(np.flatnonzero(query_class_ids == class_id) for class_id in range(len(self.class_names)))
-
-    @staticmethod
-    def _kind_of(query: PromptQuery) -> PromptKind:
-        match query:
-            case TextQuery():
-                return PromptKind.TEXT
-            case VisualQuery():
-                return PromptKind.VISUAL
 
     @staticmethod
     def _validate_distinct_queries(queries: Sequence[PromptQuery], query_class_ids: Sequence[int]) -> None:
