@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
 
-from ..options import ClassifierBackend, Device, ImagePooling, Precision
+from ..options import ClassifierBackend, Device, ImageFit, ImagePooling, Precision
 from ..prompt import TextTemplates
 from .config_values import ConfigValues
 
@@ -26,6 +26,8 @@ class ClassifierSettings:
         Hugging Face Hub model id or local checkpoint directory.
     image_pooling : ImagePooling
         How the vision tokens are pooled into the image embedding; one of ``backend.supported_image_poolings``.
+    image_fit : ImageFit
+        How images of any aspect ratio are fitted into the model input; ``LETTERBOX`` keeps the whole image.
     text_templates : tuple[str, ...]
         Templates with one ``{}`` each, filled with every text query and ensembled; ``("{}",)`` uses the bare query.
     batch_size : int
@@ -45,6 +47,7 @@ class ClassifierSettings:
     backend: ClassifierBackend
     weights_path: str
     image_pooling: ImagePooling
+    image_fit: ImageFit = ImageFit.LETTERBOX
     text_templates: tuple[str, ...] = ("{}",)
     batch_size: int = 8
     device: Device = Device.AUTO
@@ -100,6 +103,7 @@ class ClassifierSettings:
             backend=required.backend,
             weights_path=required.weights_path,
             image_pooling=required.image_pooling,
+            image_fit=config_values.member("image_fit", ImageFit, required.image_fit),
             text_templates=config_values.texts("text_templates", required.text_templates),
             batch_size=config_values.integer("batch_size", required.batch_size),
             device=config_values.member("device", Device, required.device),

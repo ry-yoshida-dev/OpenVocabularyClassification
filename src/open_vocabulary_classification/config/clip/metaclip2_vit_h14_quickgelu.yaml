@@ -2,6 +2,7 @@ classifier:
   backend: clip
   weights_path: facebook/metaclip-2-worldwide-huge-quickgelu
   image_pooling: class_token
+  image_fit: letterbox
   text_templates:
     - "a photo of a {}."
   batch_size: 8

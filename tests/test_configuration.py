@@ -9,6 +9,7 @@ from open_vocabulary_classification import (
     ClassifierBackend,
     ClassifierSettings,
     Device,
+    ImageFit,
     ImagePooling,
     Precision,
     PresetCatalog,
@@ -70,6 +71,14 @@ def test_from_mapping_fills_defaults() -> None:
         precision=Precision.BFLOAT16,
     )
     assert settings.device is Device.AUTO
+    assert settings.image_fit is ImageFit.LETTERBOX
+
+
+def test_from_mapping_reads_image_fit() -> None:
+    settings: ClassifierSettings = ClassifierSettings.from_mapping(
+        {"backend": "clip", "weights_path": "clip", "image_pooling": "class_token", "image_fit": "native"}
+    )
+    assert settings.image_fit is ImageFit.NATIVE
 
 
 @pytest.mark.parametrize(

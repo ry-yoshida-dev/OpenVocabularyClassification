@@ -10,7 +10,8 @@ Each preset's `classifier` section maps one-to-one onto the fields of
 [`PresetCatalog`](../settings/presets.py) loads a preset by backend and name, or any YAML file in this format;
 `ClassifierSettings.from_mapping` or any dataclass builder reads the section from other configuration systems.
 Switching models means switching preset files. Every preset uses the pooling its model was trained with (`class_token` for CLIP, `attention` for SigLIP);
-set `image_pooling: patch_mean` to use global average pooling of the patch tokens instead.
+set `image_pooling: patch_mean` to use global average pooling of the patch tokens instead. Every preset letterboxes
+images (`image_fit: letterbox`); set `image_fit: native` for the checkpoint's own crop or stretch.
 
 | Folder | Presets |
 | ------ | ------- |
@@ -24,6 +25,7 @@ classifier:
   backend: clip
   weights_path: openai/clip-vit-base-patch16
   image_pooling: class_token
+  image_fit: letterbox
   text_templates:
     - "a photo of a {}."
     - "a blurry photo of a {}."

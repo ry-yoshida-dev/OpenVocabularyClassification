@@ -8,7 +8,7 @@ from typing import ClassVar, TextIO
 
 from ..classifier import OpenVocabularyClassifier
 from ..image_tiling import ImageTiling
-from ..options import ClassifierBackend, Device, ImagePooling, Precision
+from ..options import ClassifierBackend, Device, ImageFit, ImagePooling, Precision
 from ..prompt import Prompt, PromptQuery, TextQuery, VisualQuery, VisualReference
 from ..result import Classification, ClassificationRecord
 from ..settings import ClassifierSettings, PresetCatalog
@@ -22,13 +22,13 @@ class ClassifyCommand:
     Command line classifying image files and directories into the classes given as arguments.
 
     Settings come from a packaged preset (``--preset clip/openai_vit_b16``), a YAML file in the preset format
-    (``--config``) or a backend and weights (``--backend``, ``--weights``); ``--pooling``, ``--templates``,
-    ``--batch-size``, ``--device`` and ``--precision`` override them. A class written as ``name:query,query`` (e.g.
-    ``dog:dog,puppy``) is queried by each query and reported as ``name``; a query ``@path`` is a visual query whose
-    references are the image file or the images of the directory at ``path`` (e.g. ``mug:@refs/mug``). A class given
-    more than once collects the queries of every argument. Images are read one mini-batch at a time, upright as their
-    EXIF orientation says; files that cannot be decoded are reported on the error stream and skipped. Invalid
-    arguments are reported before the model is loaded.
+    (``--config``) or a backend and weights (``--backend``, ``--weights``); ``--pooling``, ``--image-fit``,
+    ``--templates``, ``--batch-size``, ``--device`` and ``--precision`` override them. A class written as
+    ``name:query,query`` (e.g. ``dog:dog,puppy``) is queried by each query and reported as ``name``; a query
+    ``@path`` is a visual query whose references are the image file or the images of the directory at ``path`` (e.g.
+    ``mug:@refs/mug``). A class given more than once collects the queries of every argument. Images are read one
+    mini-batch at a time, upright as their EXIF orientation says; files that cannot be decoded are reported on the
+    error stream and skipped. Invalid arguments are reported before the model is loaded.
 
     Installed as the ``open-vocabulary-classify`` script.
     """
@@ -168,6 +168,9 @@ class ClassifyCommand:
         parser.add_argument("--weights", help="Hugging Face Hub model id or local checkpoint; needs --backend")
         parser.add_argument("--backend", type=ClassifierBackend, choices=list(ClassifierBackend))
         parser.add_argument("--pooling", type=ImagePooling, choices=list(ImagePooling))
+        parser.add_argument(
+            "--image-fit", type=ImageFit, choices=list(ImageFit), help="letterbox keeps the whole image (default)"
+        )
         parser.add_argument("--templates", nargs="+", help="text templates with one {} each")
         parser.add_argument("--batch-size", type=int)
         parser.add_argument("--device", type=Device, choices=list(Device))
@@ -207,6 +210,7 @@ class ClassifyCommand:
         return replace(
             base,
             image_pooling=base.image_pooling if namespace.pooling is None else namespace.pooling,
+            image_fit=base.image_fit if namespace.image_fit is None else namespace.image_fit,
             text_templates=base.text_templates if namespace.templates is None else tuple(namespace.templates),
             batch_size=base.batch_size if namespace.batch_size is None else namespace.batch_size,
             device=base.device if namespace.device is None else namespace.device,

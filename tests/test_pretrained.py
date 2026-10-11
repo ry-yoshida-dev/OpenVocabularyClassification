@@ -12,6 +12,7 @@ from open_vocabulary_classification import (
     ClassifierBackend,
     ClassifierSettings,
     Device,
+    ImageFit,
     OpenVocabularyClassifier,
     Prompt,
 )
@@ -46,7 +47,11 @@ def weights_path(request: pytest.FixtureRequest) -> str:
 def classifier(weights_path: str) -> OpenVocabularyClassifier:
     backend: ClassifierBackend = CHECKPOINTS[weights_path]
     return ClassifierSettings(
-        backend=backend, weights_path=weights_path, image_pooling=backend.trained_image_pooling, device=Device.CPU
+        backend=backend,
+        weights_path=weights_path,
+        image_pooling=backend.trained_image_pooling,
+        image_fit=ImageFit.NATIVE,
+        device=Device.CPU,
     ).build()
 
 

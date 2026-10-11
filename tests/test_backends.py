@@ -22,8 +22,10 @@ from open_vocabulary_classification import (
     ClassifierBackend,
     ClassifierSettings,
     Device,
+    ImageFit,
     ImagePooling,
     ImageTiling,
+    Letterbox,
     OpenVocabularyClassifier,
     Precision,
     Prompt,
@@ -60,13 +62,18 @@ NATIVE_POOLINGS: dict[ClassifierBackend, ImagePooling] = {
 
 
 def build_classifier(
-    checkpoint_directory: Path, name: str, image_pooling: ImagePooling | None = None, batch_size: int = 8
+    checkpoint_directory: Path,
+    name: str,
+    image_pooling: ImagePooling | None = None,
+    batch_size: int = 8,
+    image_fit: ImageFit = ImageFit.NATIVE,
 ) -> OpenVocabularyClassifier:
     backend: ClassifierBackend = BACKENDS[name]
     return ClassifierSettings(
         backend=backend,
         weights_path=str(checkpoint_directory / name),
         image_pooling=NATIVE_POOLINGS[backend] if image_pooling is None else image_pooling,
+        image_fit=image_fit,
         batch_size=batch_size,
         device=Device.CPU,
     ).build()
@@ -251,6 +258,7 @@ def test_bfloat16_embeddings_stay_close_to_float32(checkpoint_directory: Path, n
         backend=backend,
         weights_path=str(checkpoint_directory / name),
         image_pooling=backend.trained_image_pooling,
+        image_fit=ImageFit.NATIVE,
         device=Device.CPU,
         precision=Precision.BFLOAT16,
     ).build()
@@ -260,3 +268,31 @@ def test_bfloat16_embeddings_stay_close_to_float32(checkpoint_directory: Path, n
     assert classifier.logit_scale == float32_classifier.logit_scale
     assert classifier.logit_bias == float32_classifier.logit_bias
     np.testing.assert_allclose(embeddings, build_classifier(checkpoint_directory, name).embed_images(IMAGES), atol=0.05)
+
+
+@pytest.mark.parametrize("name", ["clip", "metaclip_2", "siglip"])
+def test_letterbox_embeds_the_image_padded_with_the_mean_color(checkpoint_directory: Path, name: str) -> None:
+    _, processor = load_reference_model(checkpoint_directory, name)
+    image_mean: object = processor.image_processor.image_mean
+    assert isinstance(image_mean, list | tuple)
+    red, green, blue = (round(float(mean) * 255.0) for mean in cast(tuple[float, float, float], image_mean))
+    padded: list[Image.Image] = [Letterbox((red, green, blue)).apply(image) for image in IMAGES]
+    expected: FloatArray = build_classifier(checkpoint_directory, name).embed_images(padded)
+    letterboxed: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name, image_fit=ImageFit.LETTERBOX)
+    np.testing.assert_allclose(letterboxed.embed_images(IMAGES), expected, atol=1e-5)
+    assert not np.allclose(build_classifier(checkpoint_directory, name).embed_images(IMAGES), expected, atol=1e-3)
+
+
+def test_letterbox_keeps_naflex_images_as_they_are(checkpoint_directory: Path) -> None:
+    letterboxed: OpenVocabularyClassifier = build_classifier(
+        checkpoint_directory, "siglip2", image_fit=ImageFit.LETTERBOX
+    )
+    native: FloatArray = build_classifier(checkpoint_directory, "siglip2").embed_images(IMAGES)
+    np.testing.assert_allclose(letterboxed.embed_images(IMAGES), native, atol=1e-6)
+
+
+@pytest.mark.parametrize("name", ["clip", "siglip"])
+def test_letterbox_applies_to_visual_references(checkpoint_directory: Path, name: str) -> None:
+    classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, name, image_fit=ImageFit.LETTERBOX)
+    prompt: Prompt = Prompt({"image": (VisualQuery((VisualReference(IMAGES[0]),)),)})
+    np.testing.assert_allclose(classifier.embed_prompt(prompt), classifier.embed_images(IMAGES[:1]), atol=1e-6)

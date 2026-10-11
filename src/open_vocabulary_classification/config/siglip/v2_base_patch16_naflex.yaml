@@ -2,6 +2,7 @@ classifier:
   backend: siglip
   weights_path: google/siglip2-base-patch16-naflex
   image_pooling: attention
+  image_fit: letterbox
   text_templates:
     - "a photo of a {}."
   batch_size: 16

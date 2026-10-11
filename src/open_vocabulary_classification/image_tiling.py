@@ -10,7 +10,9 @@ class ImageTiling:
 
     Models resize every image to a small input (e.g. 224 pixels), so small objects in large images lose most of their
     pixels. Tiling classifies each tile, and the full image when ``is_full_image_included``, and keeps the highest
-    logit of every query over these views, so an object visible in any one view is found.
+    logit of every query over these views, so an object visible in any one view is found. Every view is fitted into
+    the model input as ``ClassifierSettings.image_fit`` says; ``LETTERBOX`` keeps each view whole, whereas the
+    ``NATIVE`` center crop of CLIP cuts off the edges of non-square views.
 
     Attributes
     ----------

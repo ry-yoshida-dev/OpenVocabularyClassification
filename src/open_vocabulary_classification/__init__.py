@@ -1,6 +1,7 @@
 from .classifier import OpenVocabularyClassifier
 from .image_tiling import ImageTiling
-from .options import ClassifierBackend, Device, ImagePooling, Precision, ScoreActivation
+from .letterbox import Letterbox
+from .options import ClassifierBackend, Device, ImageFit, ImagePooling, Precision, ScoreActivation
 from .prompt import Prompt, PromptKind, PromptQuery, TextQuery, TextTemplates, VisualQuery, VisualReference
 from .result import Classification, ClassificationRecord, ClassificationResult
 from .settings import ClassifierSettings, PresetCatalog
@@ -12,8 +13,10 @@ __all__ = [
     "ClassifierBackend",
     "ClassifierSettings",
     "Device",
+    "ImageFit",
     "ImagePooling",
     "ImageTiling",
+    "Letterbox",
     "OpenVocabularyClassifier",
     "Precision",
     "PresetCatalog",

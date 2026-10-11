@@ -9,7 +9,8 @@ from PIL import Image
 
 from .array_types import FloatArray
 from .image_tiling import ImageTiling
-from .options import ClassifierBackend, ImagePooling, ScoreActivation
+from .letterbox import Letterbox
+from .options import ClassifierBackend, ImageFit, ImagePooling, ScoreActivation
 from .prompt import Prompt, TextQuery
 from .result import ClassificationResult
 from .settings import ClassifierSettings
@@ -29,7 +30,9 @@ class OpenVocabularyClassifier(ABC):
     Images of any mode are converted to RGB; transparent pixels are composited over ``TRANSPARENCY_BACKGROUND``
     (white) instead of keeping the color hidden under them, and single-channel images of more than 8 bits (16-bit,
     32-bit integer or float) are stretched linearly from their lowest to their highest finite value instead of being
-    clipped to 255.
+    clipped to 255. With ``settings.image_fit`` set to ``LETTERBOX``, every image, tile and visual reference is then
+    padded to a square of the model's fill color, so square model inputs show the whole image undistorted; models
+    whose input keeps the aspect ratio (``IS_ASPECT_RATIO_KEPT``) take the image as it is.
 
     Image embeddings are pooled as ``settings.image_pooling`` says, so ``embed_images`` returns exactly the
     embeddings ``classify_images`` scores: ``classify_embeddings(embed_images(images, tiling), prompt)`` equals
@@ -47,6 +50,7 @@ class OpenVocabularyClassifier(ABC):
     UNIT_NORM_TOLERANCE: ClassVar[float] = 1e-3
     HIGH_BIT_DEPTH_MODES: ClassVar[frozenset[str]] = frozenset({"I", "I;16", "I;16B", "I;16L", "I;16N", "F"})
     MAX_CHANNEL_VALUE: ClassVar[float] = 255.0
+    IS_ASPECT_RATIO_KEPT: ClassVar[bool] = False
 
     def __init__(self, settings: ClassifierSettings) -> None:
         """
@@ -122,6 +126,18 @@ class OpenVocabularyClassifier(ABC):
         -------
         float
             Learned bias of the model, ``0.0`` for a model without one.
+        """
+
+    @property
+    @abstractmethod
+    def _letterbox_fill_color(self) -> tuple[int, int, int]:
+        """
+        Color padding letterboxed images.
+
+        Returns
+        -------
+        tuple[int, int, int]
+            RGB color, normally the mean color the model normalizes its input by.
         """
 
     @abstractmethod
@@ -446,7 +462,17 @@ class OpenVocabularyClassifier(ABC):
                     yield view_embeddings.reshape(len(image_batch), tiling.view_count, -1)
 
     def _embed_checked(self, images: Sequence[Image.Image]) -> FloatArray:
-        return self._checked_embeddings(self._embed_mini_batch([self._to_rgb(image) for image in images]), len(images))
+        return self._checked_embeddings(
+            self._embed_mini_batch([self._prepare_image(image) for image in images]), len(images)
+        )
+
+    def _prepare_image(self, image: Image.Image) -> Image.Image:
+        rgb_image: Image.Image = self._to_rgb(image)
+        match self.settings.image_fit:
+            case ImageFit.LETTERBOX if not self.IS_ASPECT_RATIO_KEPT:
+                return Letterbox(self._letterbox_fill_color).apply(rgb_image)
+            case ImageFit.LETTERBOX | ImageFit.NATIVE:
+                return rgb_image
 
     def _logits(self, image_embeddings: FloatArray, query_embeddings: FloatArray) -> FloatArray:
         logits: FloatArray = image_embeddings @ query_embeddings.T * self.logit_scale + self.logit_bias

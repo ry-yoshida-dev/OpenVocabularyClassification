@@ -13,12 +13,13 @@ weekly and on manual dispatch.
 | Component | Description |
 | --------- | ----------- |
 | [conftest.py](./conftest.py) | Session fixture saving tiny checkpoints with their processors and tokenizers; the `--run-pretrained` option. |
-| [test_backends.py](./test_backends.py) | Architecture selection, native pooling, logits and text embeddings equal to the `transformers` models, CLIP patch mean, NaFlex padding invariance, visual queries, classification from embeddings, tiling, bfloat16 and text length limits. |
+| [test_backends.py](./test_backends.py) | Architecture selection, native pooling, logits and text embeddings equal to the `transformers` models, CLIP patch mean, NaFlex padding invariance, visual queries, classification from embeddings, tiling, letterboxing with the processor mean color (images and references, none for NaFlex), bfloat16 and text length limits. |
 | [test_pretrained.py](./test_pretrained.py) | Real CLIP, SigLIP, SigLIP 2 and SigLIP 2 NaFlex weights: embeddings and logits equal to `transformers`, solid colors named and found by text search. |
 | [test_cli.py](./test_cli.py) | Command-line prompt parsing, image discovery, text and JSON lines output, preset listing and argument errors. |
 | [test_image_tiling.py](./test_image_tiling.py) | Tile sizes, overlap, order and validation. |
+| [test_letterbox.py](./test_letterbox.py) | Centered square padding, square images unchanged and fill color validation. |
 | [test_uniform_attention_pooling.py](./test_uniform_attention_pooling.py) | Patch mean through the MAP head equal to the head with uniform attention, padding excluded. |
-| [test_classifier.py](./test_classifier.py) | Shared mini-batching, streaming, tiling, classification from embeddings, text and prompt embeddings, RGB conversion with transparency over white, scoring and output shape checks. |
+| [test_classifier.py](./test_classifier.py) | Shared mini-batching, streaming, tiling, classification from embeddings, text and prompt embeddings, RGB conversion with transparency over white, letterboxing of images and tiles, scoring and output shape checks. |
 | [test_classification_result.py](./test_classification_result.py) | Best query per class, softmax and sigmoid scores, ranking, score and logit filtering, lookup, records and read-only arrays. |
 | [test_query_embedding_store.py](./test_query_embedding_store.py) | Template ensembling, caching per text query and reference, least-recently-used eviction, reference averaging, release, query order and concurrent use. |
 | [test_least_recently_used.py](./test_least_recently_used.py) | Bounded mapping eviction order, refresh on access and capacity validation. |

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import cast
+from typing import ClassVar, cast
 
 import torch
 from PIL import Image
@@ -17,6 +17,8 @@ class Siglip2NaFlexClassifier(SiglipFamilyClassifier[Siglip2Model, Siglip2Proces
     and shorter grids are padded within a mini-batch. The patch mask keeps the padding out of both the attention
     pooling and the patch mean.
     """
+
+    IS_ASPECT_RATIO_KEPT: ClassVar[bool] = True
 
     def _load_processor(self, weights_path: str) -> Siglip2Processor:
         return Siglip2Processor.from_pretrained(weights_path)

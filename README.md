@@ -24,6 +24,10 @@ so that models can be swapped and compared by changing configuration only. Appli
 - **Scores follow the training loss**: CLIP scores are a softmax over the prompt classes (exactly one class is
   assumed), SigLIP scores are independent sigmoids (any number of classes may apply). Raw logits are kept as well, and
   `filter_by_logit` thresholds them independently of the other classes. `to_records` serializes results as JSON.
+- **The whole image is seen**: by default (`image_fit: letterbox`) every image, tile and reference image is padded
+  to a square with the model's mean color before the processor resizes it, so CLIP no longer crops the edges of
+  non-square images and fixed-resolution SigLIP no longer stretches them. `image_fit: native` restores the
+  checkpoint's own preprocessing; SigLIP 2 NaFlex keeps the aspect ratio either way.
 - **Small objects can be found**: an `ImageTiling` classifies overlapping tiles at the full model resolution, plus the
   whole image, and keeps the best logit of each query. The views of several images share one mini-batch, and
   `embed_images(images, tiling)` keeps one embedding per view for `classify_embeddings`.

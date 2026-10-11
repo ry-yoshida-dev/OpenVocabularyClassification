@@ -2,6 +2,7 @@ classifier:
   backend: clip
   weights_path: laion/CLIP-ViT-bigG-14-laion2B-39B-b160k
   image_pooling: class_token
+  image_fit: letterbox
   text_templates:
     - "a photo of a {}."
   batch_size: 4

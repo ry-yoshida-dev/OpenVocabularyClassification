@@ -2,6 +2,7 @@ classifier:
   backend: clip
   weights_path: openai/clip-vit-base-patch16
   image_pooling: class_token
+  image_fit: letterbox
   text_templates:
     - "a photo of a {}."
   batch_size: 32

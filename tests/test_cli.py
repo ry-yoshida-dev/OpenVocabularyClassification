@@ -133,6 +133,8 @@ def test_text_output_with_overrides(checkpoint_directory: Path, image_directory:
             "clip",
             "--pooling",
             ImagePooling.PATCH_MEAN.value,
+            "--image-fit",
+            "native",
             "--templates",
             "{}",
             "--device",

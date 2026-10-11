@@ -11,6 +11,7 @@ from open_vocabulary_classification import (
     ClassifierBackend,
     ClassifierSettings,
     Device,
+    ImageFit,
     ImagePooling,
     ImageTiling,
     OpenVocabularyClassifier,
@@ -42,6 +43,10 @@ class StubClassifier(OpenVocabularyClassifier):
         return 10.0
 
     @property
+    def _letterbox_fill_color(self) -> tuple[int, int, int]:
+        return (1, 2, 3)
+
+    @property
     def logit_bias(self) -> float:
         return -1.0
 
@@ -67,11 +72,16 @@ class BrokenClassifier(StubClassifier):
         return np.zeros((len(texts) + 1, 2))
 
 
-def build_settings(backend: ClassifierBackend = ClassifierBackend.CLIP, batch_size: int = 2) -> ClassifierSettings:
+def build_settings(
+    backend: ClassifierBackend = ClassifierBackend.CLIP,
+    batch_size: int = 2,
+    image_fit: ImageFit = ImageFit.LETTERBOX,
+) -> ClassifierSettings:
     return ClassifierSettings(
         backend=backend,
         weights_path="stub",
         image_pooling=ImagePooling.PATCH_MEAN,
+        image_fit=image_fit,
         batch_size=batch_size,
         device=Device.CPU,
     )
@@ -231,7 +241,7 @@ def test_settings_of_another_backend_are_rejected() -> None:
     ],
 )
 def test_transparent_pixels_become_white(image: Image.Image) -> None:
-    classifier: StubClassifier = StubClassifier(build_settings())
+    classifier: StubClassifier = StubClassifier(build_settings(image_fit=ImageFit.NATIVE))
     classifier.embed_image(image)
     assert classifier.images[0].mode == "RGB"
     assert classifier.images[0].getpixel((0, 0)) == (255, 255, 255)
@@ -241,13 +251,13 @@ def test_palette_transparency_becomes_white() -> None:
     image: Image.Image = Image.new("P", (10, 8), 0)
     image.putpalette([0, 0, 0, 255, 0, 0])
     image.info["transparency"] = 0
-    classifier: StubClassifier = StubClassifier(build_settings())
+    classifier: StubClassifier = StubClassifier(build_settings(image_fit=ImageFit.NATIVE))
     classifier.embed_image(image)
     assert classifier.images[0].getpixel((0, 0)) == (255, 255, 255)
 
 
 def test_opaque_images_keep_their_colors() -> None:
-    classifier: StubClassifier = StubClassifier(build_settings())
+    classifier: StubClassifier = StubClassifier(build_settings(image_fit=ImageFit.NATIVE))
     classifier.embed_image(Image.new("RGBA", (10, 8), (10, 20, 30, 255)))
     classifier.embed_image(Image.new("L", (10, 8), 40))
     assert [image.getpixel((0, 0)) for image in classifier.images] == [(10, 20, 30), (40, 40, 40)]
@@ -269,3 +279,25 @@ def test_high_bit_depth_images_are_stretched(image: Image.Image, expected_values
     assert [converted.getpixel((x, y)) for y in range(2) for x in range(2)] == [
         (value, value, value) for value in expected_values
     ]
+
+
+class AspectRatioKeepingClassifier(StubClassifier):
+    IS_ASPECT_RATIO_KEPT: ClassVar[bool] = True
+
+
+def test_letterbox_pads_images_and_tiles_to_squares() -> None:
+    classifier: StubClassifier = StubClassifier(build_settings())
+    classifier.classify(Image.new("RGB", (4, 10), (200, 100, 50)), PROMPT, ImageTiling(grid_size=2, overlap_ratio=0.0))
+    assert [image.size for image in classifier.images] == [(10, 10), (5, 5), (5, 5), (5, 5), (5, 5)]
+    assert classifier.images[0].getpixel((0, 0)) == (1, 2, 3)
+    assert classifier.images[0].getpixel((5, 5)) == (200, 100, 50)
+
+
+@pytest.mark.parametrize(
+    ("classifier_type", "image_fit"),
+    [(StubClassifier, ImageFit.NATIVE), (AspectRatioKeepingClassifier, ImageFit.LETTERBOX)],
+)
+def test_images_keep_their_size_without_letterbox(classifier_type: type[StubClassifier], image_fit: ImageFit) -> None:
+    classifier: StubClassifier = classifier_type(build_settings(image_fit=image_fit))
+    classifier.embed_image(Image.new("RGB", (4, 10)))
+    assert [image.size for image in classifier.images] == [(4, 10)]

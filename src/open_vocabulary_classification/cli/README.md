@@ -26,5 +26,6 @@ open-vocabulary-classify images/ --recursive --preset siglip/v2_so400m_patch14_3
     --classes cat dog --threshold 0.1 --format jsonl > results.jsonl
 open-vocabulary-classify large_photo.jpg --weights google/siglip2-base-patch16-naflex --backend siglip \
     --tile-grid 3 --classes "small bird" "airplane"
+open-vocabulary-classify images/ --preset clip/openai_vit_b16 --image-fit native --classes cat dog
 open-vocabulary-classify shelf/ --preset siglip/v2_base_patch16_224 --classes "my mug:mug,@refs/my_mug/" cup
 ```

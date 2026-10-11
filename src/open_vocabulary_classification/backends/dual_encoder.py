@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Sequence
 from itertools import batched
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import numpy as np
 import torch
@@ -48,6 +48,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
             self._logit_scale: float = self._read_logit_scale()
             self._logit_bias: float = self._read_logit_bias()
         self._runtime.prepare_model(self._model)
+        self._fill_color: tuple[int, int, int] = self._read_mean_color()
         self._query_embeddings: QueryEmbeddingStore = QueryEmbeddingStore(
             embed_sentences=self._embed_sentences,
             embed_references=self._embed_references,
@@ -185,6 +186,10 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         """
         return self._logit_bias
 
+    @property
+    def _letterbox_fill_color(self) -> tuple[int, int, int]:
+        return self._fill_color
+
     def _embed_mini_batch(self, images: Sequence[Image.Image]) -> FloatArray:
         return self._to_array(self._embed_image_tensor(images))
 
@@ -208,7 +213,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         return torch.cat(sentence_embeddings, dim=0)
 
     def _embed_references(self, references: Sequence[VisualReference]) -> torch.Tensor:
-        images: list[Image.Image] = [self._to_rgb(reference.image) for reference in references]
+        images: list[Image.Image] = [self._prepare_image(reference.image) for reference in references]
         mini_batches: list[tuple[Image.Image, ...]] = list(batched(images, self.batch_size))
         return torch.cat([self._embed_image_tensor(mini_batch) for mini_batch in mini_batches], dim=0)
 
@@ -244,6 +249,30 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
             )
         encoding.convert_to_tensors("pt")
         return encoding.to(self._runtime.device)
+
+    def _read_mean_color(self) -> tuple[int, int, int]:
+        """
+        Read the mean color the image processor normalizes by.
+
+        Returns
+        -------
+        tuple[int, int, int]
+            RGB mean color in ``[0, 255]``.
+
+        Raises
+        ------
+        TypeError
+            If the image processor has no per-channel or single mean.
+        """
+        image_mean: object = getattr(self._processor.image_processor, "image_mean", None)
+        means: list[object] = (
+            list(cast(Sequence[object], image_mean)) if isinstance(image_mean, list | tuple) else [image_mean] * 3
+        )
+        channel_means: list[float] = [float(mean) for mean in means if isinstance(mean, float | int)]
+        if len(channel_means) != 3 or len(means) != 3:
+            raise TypeError(f"the image processor has no RGB image_mean. got {image_mean!r}")
+        red, green, blue = (round(min(max(mean, 0.0), 1.0) * self.MAX_CHANNEL_VALUE) for mean in channel_means)
+        return red, green, blue
 
     @staticmethod
     def _to_array(tensor: torch.Tensor) -> FloatArray:
