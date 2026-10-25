@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from .array_types import FloatArray
+from .prompt import EmbeddingLayout
 from .result import LogitAggregation
 
 
@@ -11,11 +12,14 @@ class PreparedPrompt:
 
     Attributes
     ----------
+    layout : EmbeddingLayout
+        Embeddings of the prompt.
     aggregation : LogitAggregation
-        Layout of the prompt and how its logits are combined per class.
+        How the logits of the layout are combined per class.
     embeddings : FloatArray
         Read-only L2-normalized embeddings in embedding-id order, shape (E, D).
     """
 
+    layout: EmbeddingLayout
     aggregation: LogitAggregation
     embeddings: FloatArray

@@ -6,10 +6,12 @@ Model-independent classification output shared by every classifier. A `Classific
 prompt embedding of one image and reduces them to the candidates of every class by the `similarity` steps of the
 aggregation, after the `embedding` steps the layout went through. The `ScoreActivation` of the backend turns the
 candidate logits into scores (a softmax over every candidate for CLIP, independent sigmoids for SigLIP), and each
-class takes its best candidate. Its arrays are read-only. A `LogitAggregation`
-is prepared once per prompt; every step is a `LogitReduction` that sorts the logits by group and reduces the
-consecutive `LogitSegments` vectorized, so scoring an image takes a few NumPy calls. Every logit keeps the embedding
-of the highest logit it came from, reported as the matched query and template.
+class takes its best candidate, as `ClassScores` computes it. Its arrays are read-only. A `LogitAggregation` is
+prepared once per prompt; every step is a `LogitReduction` that sorts the logits by group and reduces the consecutive
+`LogitSegments` vectorized, so scoring an image takes a few NumPy calls. Every logit keeps the embedding of the
+highest logit it came from, reported as the matched query and template. A `LogitAggregation` reads only the
+`EntryLabel`s of the embeddings, so logits stored with their labels are scored again with other `similarity` steps
+without the prompt or the model.
 
 A softmax score is relative to the other classes of the prompt, so CLIP always gives some class most of the score,
 even when the image shows none of them. To reject such images, add a background class (e.g. `"something else"`) or
@@ -21,7 +23,8 @@ data, keeping in mind that a `max` over more embeddings per class is biased upwa
 | Component | Description |
 | --------- | ----------- |
 | [classification_result.py](./classification_result.py) | `ClassificationResult`: embedding logits, class logits, matched queries and templates and scores of one image; top class, top-k, score and logit thresholds, lookup by name and records. |
-| [logit_aggregation.py](./logit_aggregation.py) | `LogitAggregation`: layout of a prompt and the reductions of its `similarity` steps, reducing the embedding logits of one image to candidate logits. |
+| [logit_aggregation.py](./logit_aggregation.py) | `LogitAggregation`: entry labels of a prompt and the reductions of its `similarity` steps, reducing the embedding logits of one image to candidate logits. |
+| [class_scores.py](./class_scores.py) | `ClassScores`: score, logit and matched embedding of every class of one image from its embedding logits. |
 | [logit_reduction.py](./logit_reduction.py) | `LogitReduction`: one `similarity` step, reducing every group of logits and keeping the embedding of its highest logit. |
 | [logit_segments.py](./logit_segments.py) | `LogitSegments`: consecutive runs of a logit vector, reduced (`max`, `mean`, `median`, `min`, `logsumexp`) and arg-maxed run by run. |
 | [candidate_logits.py](./candidate_logits.py) | `CandidateLogits`: logits of the candidates left for one image, ordered by class, and the embedding behind each. |
@@ -41,4 +44,10 @@ present_labels = result.filter_by_score(0.5)
 confident_labels = result.filter_by_logit(25.0)
 result.score_of("dog")
 json.dumps(result.to_records())
+
+labels = result.layout.entry_labels
+median = PromptAggregation.of(
+    [AggregationStep(AggregationUnit.PROMPT, AggregationTiming.SIMILARITY, AggregationMethod.MEDIAN)]
+)
+ClassScores.of(LogitAggregation(labels, median), result.embedding_logits, ScoreActivation.SOFTMAX).scores
 ```

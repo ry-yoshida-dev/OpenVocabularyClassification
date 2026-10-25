@@ -12,7 +12,7 @@ Text queries are filled into `TextTemplates` (e.g. `"a photo of a {}."`); the te
 table of queries (rows) and templates (columns); a visual query, which averages the embeddings of its reference images
 (few-shot prototypes), fills one cell. An `EmbeddingLayout` lists the embeddings a prompt is scored by, after the
 `embedding` steps of the aggregation merged cells into representative embeddings; `EntryGroups` forms the groups of
-one step, for embeddings here and for logits in the result.
+one step from the `EntryLabel`s of the entries, for embeddings here and for logits in the result.
 
 ## Components
 
@@ -23,7 +23,8 @@ one step, for embeddings here and for logits in the result.
 | [text_templates.py](./text_templates.py) | `TextTemplates`: validated `{}` templates filled with each text query. |
 | [embedding_layout.py](./embedding_layout.py) | `EmbeddingLayout`: the embeddings of a prompt, ordered by class, after the `embedding` aggregation steps. |
 | [embedding_entry.py](./embedding_entry.py) | `EmbeddingEntry`: one embedding or a merged group; its class, query and template labels and its sentence and visual members. |
-| [entry_groups.py](./entry_groups.py) | `EntryGroups`: the groups one aggregation step forms from entries, numbered by first appearance, and the merged entries. |
+| [entry_label.py](./entry_label.py) | `EntryLabel`: class, query and template an entry's members share, merged along the axis of an aggregation unit. |
+| [entry_groups.py](./entry_groups.py) | `EntryGroups`: the groups one aggregation step forms from entry labels, numbered by first appearance, their merged labels and members. |
 | [visual_reference.py](./visual_reference.py) | `VisualReference`: reference image, compared by identity. |
 | [queries/](./queries/README.md) | Query types: `TextQuery`, `VisualQuery` and their alias `PromptQuery`. |
 

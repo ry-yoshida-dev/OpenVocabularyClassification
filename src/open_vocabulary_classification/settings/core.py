@@ -31,8 +31,9 @@ class ClassifierSettings:
     text_templates : tuple[str, ...]
         Templates with one ``{}`` each, filled with every text query; ``("{}",)`` uses the bare query.
     aggregation : PromptAggregation
-        Steps turning the embeddings of every class, one per prompt and template, into one class logit; by default the
-        templates of each prompt are ensembled into one embedding and each class takes its best prompt.
+        Steps turning the embeddings of every class, one per prompt and template, into its candidates, of which a
+        class scores its best; by default the templates of each prompt are ensembled into one embedding and each class
+        takes its best prompt.
     batch_size : int
         Number of images per forward pass.
     device : Device

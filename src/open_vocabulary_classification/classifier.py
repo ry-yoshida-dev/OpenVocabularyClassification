@@ -282,7 +282,7 @@ class OpenVocabularyClassifier(ABC):
         prepared_prompt: PreparedPrompt = self._prepared_prompts(prompt, self.settings)
         for image_embeddings in self._iter_embedding_batches(images, tiling):
             for embedding_logits in self._logits(image_embeddings, prepared_prompt.embeddings):
-                yield self._result(embedding_logits, prepared_prompt.aggregation)
+                yield self._result(embedding_logits, prepared_prompt)
 
     def classify_embeddings(self, image_embeddings: FloatArray, prompt: Prompt) -> list[ClassificationResult]:
         """
@@ -326,7 +326,7 @@ class OpenVocabularyClassifier(ABC):
                 f"image_embeddings must have dimension {prompt_embeddings.shape[1]}. got {image_embeddings.shape[-1]}"
             )
         return [
-            self._result(embedding_logits, prepared_prompt.aggregation)
+            self._result(embedding_logits, prepared_prompt)
             for embedding_logits in self._logits(image_embeddings, prompt_embeddings)
         ]
 
@@ -499,7 +499,8 @@ class OpenVocabularyClassifier(ABC):
         embeddings: FloatArray = self._checked_embeddings(self._embed_layout(layout), len(layout))
         embeddings.setflags(write=False)
         return PreparedPrompt(
-            aggregation=LogitAggregation(layout=layout),
+            layout=layout,
+            aggregation=LogitAggregation.of(layout),
             embeddings=embeddings,
         )
 
@@ -520,9 +521,12 @@ class OpenVocabularyClassifier(ABC):
         logits: FloatArray = image_embeddings @ prompt_embeddings.T * self.logit_scale + self.logit_bias
         return logits if logits.ndim == 2 else logits.max(axis=1)
 
-    def _result(self, embedding_logits: FloatArray, aggregation: LogitAggregation) -> ClassificationResult:
+    def _result(self, embedding_logits: FloatArray, prepared_prompt: PreparedPrompt) -> ClassificationResult:
         return ClassificationResult(
-            aggregation=aggregation, embedding_logits=embedding_logits, score_activation=self.score_activation
+            layout=prepared_prompt.layout,
+            aggregation=prepared_prompt.aggregation,
+            embedding_logits=embedding_logits,
+            score_activation=self.score_activation,
         )
 
     @staticmethod

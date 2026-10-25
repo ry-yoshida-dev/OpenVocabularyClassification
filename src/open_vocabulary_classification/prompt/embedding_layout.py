@@ -1,9 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..options import AggregationTiming, PromptAggregation
 from .core import Prompt
 from .embedding_entry import EmbeddingEntry
 from .entry_groups import EntryGroups
+from .entry_label import EntryLabel
 from .queries import TextQuery, VisualQuery
 from .text_templates import TextTemplates
 
@@ -30,6 +31,8 @@ class EmbeddingLayout:
         Group of every input entry of each ``EMBEDDING`` step, in step order; the first step groups the cells.
     entries : tuple[EmbeddingEntry, ...]
         Every embedding in embedding-id order, the groups of the last step.
+    entry_labels : tuple[EntryLabel, ...]
+        Label of every entry, in embedding-id order.
 
     Raises
     ------
@@ -43,8 +46,10 @@ class EmbeddingLayout:
     cells: tuple[EmbeddingEntry, ...]
     embedding_group_ids: tuple[tuple[int, ...], ...]
     entries: tuple[EmbeddingEntry, ...]
+    entry_labels: tuple[EntryLabel, ...] = field(init=False, compare=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "entry_labels", tuple(entry.label for entry in self.entries))
         class_ids: list[int] = [entry.class_id for entry in self.entries]
         if class_ids != sorted(class_ids) or sorted(set(class_ids)) != list(range(len(self.prompt.class_names))):
             raise ValueError("entries must be ordered by class, at least one per class.")
@@ -92,9 +97,9 @@ class EmbeddingLayout:
         cells: tuple[EmbeddingEntry, ...] = tuple(entries)
         embedding_group_ids: list[tuple[int, ...]] = []
         for step in aggregation.steps_at(AggregationTiming.EMBEDDING):
-            groups: EntryGroups = EntryGroups.of(entries, step.unit)
+            groups: EntryGroups = EntryGroups.of([entry.label for entry in entries], step.unit)
             embedding_group_ids.append(tuple(int(group_id) for group_id in groups.group_ids.tolist()))
-            entries = list(groups.merged_entries)
+            entries = [EmbeddingEntry.merged(members, step.unit) for members in groups.members_of(entries)]
         return cls(
             prompt=prompt,
             aggregation=aggregation,

@@ -16,7 +16,7 @@ presets of every supported model, and the backends implementing the interface.
 | [settings/](./settings/README.md) | `ClassifierSettings` with `from_mapping` and `build()`, and `PresetCatalog` loading packaged presets and YAML files. |
 | [options/](./options/README.md) | `ClassifierBackend`, `ImagePooling`, `ImageFit`, `ScoreActivation`, `Device` and `Precision`: options composing `ClassifierSettings`. |
 | [prompt/](./prompt/README.md) | `Prompt` mapping each class name to its text and visual queries, the query types, `TextTemplates` and `VisualReference`. |
-| [result/](./result/README.md) | `ClassificationResult`, `Classification`, its JSON-serializable `ClassificationRecord` and the vectorized `LogitAggregation`. |
+| [result/](./result/README.md) | `ClassificationResult`, `Classification`, its JSON-serializable `ClassificationRecord`, `ClassScores` and the vectorized `LogitAggregation`, which scores stored logits again from their labels. |
 | [cache/](./cache/README.md) | Thread-safe prompt embeddings cached per sentence and per visual reference. |
 | [runtime/](./runtime/README.md) | `TorchRuntime`: device, precision, model preparation and input transfer for PyTorch-backed classifiers. |
 | [backends/](./backends/README.md) | CLIP-family (CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2, DFN CLIP) and SigLIP-family (SigLIP, SigLIP 2, SigLIP 2 NaFlex) classifiers. |

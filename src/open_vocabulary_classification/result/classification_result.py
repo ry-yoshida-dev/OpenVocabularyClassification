@@ -2,12 +2,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 import numpy as np
-from numpy.typing import NDArray
 
 from ..array_types import FloatArray, IntArray
-from ..options import AggregationMethod, ScoreActivation
+from ..options import ScoreActivation
 from ..prompt import EmbeddingEntry, EmbeddingLayout, Prompt
-from .candidate_logits import CandidateLogits
+from .class_scores import ClassScores
 from .classification import Classification
 from .classification_record import ClassificationRecord
 from .logit_aggregation import LogitAggregation
@@ -20,18 +19,20 @@ class ClassificationResult:
 
     ``aggregation`` reduces the logits of the embeddings of every class to its candidates, the activation of the
     classifier turns the logits of every candidate into scores (a softmax shares the score among the candidates of
-    every class), and each class takes its best candidate: its score and logit. With one candidate per class this is
-    the activation over the class logits. The matched embedding of a class is the one with the highest logit
-    among those its logit was reduced from; its query and template are reported as matched, e.g. ``"puppy"`` for class
-    ``"dog"``, where the embedding still has a single one. With a method other than ``max`` the class logit is not the
-    logit of the matched embedding.
+    every class), and each class takes its best candidate: its score and logit, as ``ClassScores`` computes them. With
+    one candidate per class this is the activation over the class logits. The matched embedding of a class is the one
+    with the highest logit among those its logit was reduced from; its query and template are reported as matched,
+    e.g. ``"puppy"`` for class ``"dog"``, where the embedding still has a single one. With a method other than ``max``
+    the class logit is not the logit of the matched embedding.
     Iterating yields every class in class-id order. The arrays are read-only; ``embedding_logits`` is a copy of the
     given logits.
 
     Attributes
     ----------
+    layout : EmbeddingLayout
+        Embeddings of the prompt that were scored.
     aggregation : LogitAggregation
-        Layout of the prompt that was scored and how its logits are combined per class.
+        How the logits of the layout are combined per class.
     embedding_logits : FloatArray
         Logit of every embedding, shape (E,).
     score_activation : ScoreActivation
@@ -46,9 +47,11 @@ class ClassificationResult:
     Raises
     ------
     ValueError
-        If ``embedding_logits`` does not hold one finite logit per embedding of the layout.
+        If ``aggregation`` does not hold the labels of the layout, or ``embedding_logits`` does not hold one finite
+        logit per embedding of the layout.
     """
 
+    layout: EmbeddingLayout
     aggregation: LogitAggregation
     embedding_logits: FloatArray
     score_activation: ScoreActivation
@@ -57,35 +60,23 @@ class ClassificationResult:
     scores: FloatArray = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.aggregation.entry_labels != self.layout.entry_labels:
+            raise ValueError("aggregation must hold the entry labels of the layout.")
         expected_shape: tuple[int] = (len(self.layout),)
         if self.embedding_logits.shape != expected_shape:
             raise ValueError(f"embedding_logits must have shape {expected_shape}. got {self.embedding_logits.shape}")
         if not bool(np.isfinite(self.embedding_logits).all()):
             raise ValueError("embedding_logits must be finite.")
-        embedding_logits: FloatArray = self._read_only(self.embedding_logits.astype(np.float64, copy=True))
-        candidates: CandidateLogits = self.aggregation.combine(embedding_logits)
-        candidate_scores: FloatArray = self.score_activation.apply(candidates.logits)
-        best_candidate_ids: IntArray = self.aggregation.class_segments.argmax(candidates.logits)
-        class_scores: FloatArray = self.aggregation.class_segments.combine(candidate_scores, AggregationMethod.MAX)
+        embedding_logits: FloatArray = self.embedding_logits.astype(np.float64, copy=True)
+        embedding_logits.setflags(write=False)
+        class_scores: ClassScores = ClassScores.of(self.aggregation, embedding_logits, self.score_activation)
         object.__setattr__(self, "embedding_logits", embedding_logits)
-        object.__setattr__(self, "matched_entry_ids", self._read_only(candidates.best_entry_ids[best_candidate_ids]))
-        object.__setattr__(self, "class_logits", self._read_only(candidates.logits[best_candidate_ids]))
-        object.__setattr__(self, "scores", self._read_only(class_scores))
+        object.__setattr__(self, "matched_entry_ids", class_scores.matched_entry_ids)
+        object.__setattr__(self, "class_logits", class_scores.class_logits)
+        object.__setattr__(self, "scores", class_scores.scores)
 
     def __len__(self) -> int:
         return len(self.prompt.class_names)
-
-    @property
-    def layout(self) -> EmbeddingLayout:
-        """
-        Embeddings of the prompt that were scored.
-
-        Returns
-        -------
-        EmbeddingLayout
-            Layout of ``aggregation``.
-        """
-        return self.aggregation.layout
 
     @property
     def prompt(self) -> Prompt:
@@ -278,8 +269,3 @@ class ClassificationResult:
 
     def _ranked_class_ids(self) -> IntArray:
         return np.argsort(-self.scores, kind="stable").astype(np.int64)
-
-    @staticmethod
-    def _read_only[ArrayT: NDArray[np.generic]](array: ArrayT) -> ArrayT:
-        array.setflags(write=False)
-        return array

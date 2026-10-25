@@ -1,4 +1,5 @@
 from .candidate_logits import CandidateLogits
+from .class_scores import ClassScores
 from .classification import Classification
 from .classification_record import ClassificationRecord
 from .classification_result import ClassificationResult
@@ -8,6 +9,7 @@ from .logit_segments import LogitSegments
 
 __all__ = [
     "CandidateLogits",
+    "ClassScores",
     "Classification",
     "ClassificationRecord",
     "ClassificationResult",

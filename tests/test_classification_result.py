@@ -14,8 +14,10 @@ from open_vocabulary_classification import (
     Classification,
     ClassificationRecord,
     ClassificationResult,
+    ClassScores,
     EmbeddingEntry,
     EmbeddingLayout,
+    EntryLabel,
     LogitAggregation,
     Prompt,
     PromptAggregation,
@@ -55,17 +57,28 @@ def build_layout(
     return EmbeddingLayout.of(prompt, templates, prompt_aggregation)
 
 
-def build_result(score_activation: ScoreActivation, query_logits: FloatArray = QUERY_LOGITS) -> ClassificationResult:
+def scored(
+    layout: EmbeddingLayout, *, embedding_logits: FloatArray, score_activation: ScoreActivation
+) -> ClassificationResult:
     return ClassificationResult(
-        aggregation=LogitAggregation(build_layout()),
+        layout=layout,
+        aggregation=LogitAggregation.of(layout),
+        embedding_logits=embedding_logits,
+        score_activation=score_activation,
+    )
+
+
+def build_result(score_activation: ScoreActivation, query_logits: FloatArray = QUERY_LOGITS) -> ClassificationResult:
+    return scored(
+        build_layout(),
         embedding_logits=query_logits,
         score_activation=score_activation,
     )
 
 
 def build_sentence_result(prompt_aggregation: PromptAggregation) -> ClassificationResult:
-    return ClassificationResult(
-        aggregation=LogitAggregation(build_layout(DOG_PROMPT, PHOTO_TEMPLATES, prompt_aggregation)),
+    return scored(
+        build_layout(DOG_PROMPT, PHOTO_TEMPLATES, prompt_aggregation),
         embedding_logits=SENTENCE_LOGITS,
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -157,8 +170,8 @@ def test_filter_by_logit_is_independent_of_other_classes() -> None:
 def test_records_are_json_serializable() -> None:
     references: tuple[VisualReference, ...] = tuple(VisualReference(Image.new("RGB", (4, 4))) for _ in range(2))
     prompt: Prompt = Prompt({"dog": (TextQuery("dog"),), "my dog": (VisualQuery(references),)})
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(EmbeddingLayout.of(prompt, PLAIN_TEMPLATES, PromptAggregation())),
+    result: ClassificationResult = scored(
+        EmbeddingLayout.of(prompt, PLAIN_TEMPLATES, PromptAggregation()),
         embedding_logits=np.array([1.0, 2.0]),
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -210,10 +223,8 @@ def test_similarity_steps_reduce_the_table_of_a_class(steps: tuple[str, ...], do
 
 def test_matched_entry_follows_the_aggregated_logit() -> None:
     logits: FloatArray = np.array([4.0, -4.0, 1.0, 1.0, 0.0, 0.0], dtype=np.float64)
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(
-            build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template:similarity:mean", "prompt:similarity:max"))
-        ),
+    result: ClassificationResult = scored(
+        build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template:similarity:mean", "prompt:similarity:max")),
         embedding_logits=logits,
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -247,10 +258,8 @@ def test_embedding_steps_merge_the_entries_of_the_layout() -> None:
 
 
 def test_merged_prompts_report_no_matched_query() -> None:
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(
-            build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("prompt:embedding:mean", "template:similarity:max"))
-        ),
+    result: ClassificationResult = scored(
+        build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("prompt:embedding:mean", "template:similarity:max")),
         embedding_logits=np.array([1.0, 2.0, 0.0, -1.0]),
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -269,8 +278,8 @@ def test_visual_queries_form_a_group_of_their_own_per_template() -> None:
     )
     assert [entry.template for entry in layout.entries] == ["a photo of a {}", "a drawing of a {}", None]
     assert layout.entries[2] == EmbeddingEntry(0, None, None, (), (1,))
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(layout),
+    result: ClassificationResult = scored(
+        layout,
         embedding_logits=np.array([0.0, 1.0, 5.0]),
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -280,8 +289,8 @@ def test_visual_queries_form_a_group_of_their_own_per_template() -> None:
 
 def test_without_steps_every_sentence_is_a_candidate_and_a_class_takes_its_best() -> None:
     logits: FloatArray = np.array([3.0, 2.0, 2.5, 1.0, 0.0, 4.0])
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(build_layout(DOG_PROMPT, PHOTO_TEMPLATES, PromptAggregation.of([]))),
+    result: ClassificationResult = scored(
+        build_layout(DOG_PROMPT, PHOTO_TEMPLATES, PromptAggregation.of([])),
         embedding_logits=logits,
         score_activation=ScoreActivation.SOFTMAX,
     )
@@ -294,10 +303,8 @@ def test_without_steps_every_sentence_is_a_candidate_and_a_class_takes_its_best(
 
 
 def test_a_single_axis_leaves_one_candidate_per_remaining_row_or_column() -> None:
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(
-            build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template:similarity:mean"))
-        ),
+    result: ClassificationResult = scored(
+        build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template:similarity:mean")),
         embedding_logits=np.array([3.0, 2.0, 2.5, 1.0, 0.0, 4.0]),
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -317,8 +324,8 @@ def test_embedding_steps_must_not_follow_similarity_steps() -> None:
         (1, None, "a photo of a {}"),
         (1, None, "a drawing of a {}"),
     ]
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(layout),
+    result: ClassificationResult = scored(
+        layout,
         embedding_logits=np.array([1.0, 2.0, 0.0, -1.0]),
         score_activation=ScoreActivation.SIGMOID,
     )
@@ -362,10 +369,8 @@ def test_segments_match_combining_each_segment_on_its_own(method: AggregationMet
 
 def test_logsumexp_then_softmax_sums_the_softmax_of_every_logit() -> None:
     logits: FloatArray = np.array([3.0, 2.0, 2.5, 1.0, 0.0, 4.0])
-    result: ClassificationResult = ClassificationResult(
-        aggregation=LogitAggregation(
-            build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template_and_prompt:similarity:logsumexp"))
-        ),
+    result: ClassificationResult = scored(
+        build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template_and_prompt:similarity:logsumexp")),
         embedding_logits=logits,
         score_activation=ScoreActivation.SOFTMAX,
     )
@@ -394,3 +399,39 @@ def test_layouts_compare_and_hash_by_their_fields() -> None:
     assert build_layout(DOG_PROMPT, PHOTO_TEMPLATES) == build_layout(DOG_PROMPT, PHOTO_TEMPLATES)
     assert hash(build_layout(DOG_PROMPT, PHOTO_TEMPLATES)) == hash(build_layout(DOG_PROMPT, PHOTO_TEMPLATES))
     assert build_layout(DOG_PROMPT, PHOTO_TEMPLATES) != build_layout(DOG_PROMPT)
+
+
+def test_stored_logits_are_aggregated_again_from_their_labels() -> None:
+    layout: EmbeddingLayout = build_layout(DOG_PROMPT, PHOTO_TEMPLATES, PromptAggregation.of([]))
+    stored_labels: tuple[EntryLabel, ...] = tuple(
+        EntryLabel(label.class_id, label.query_id, label.template) for label in layout.entry_labels
+    )
+    median: PromptAggregation = aggregation("template_and_prompt:similarity:median")
+    again: ClassScores = ClassScores.of(
+        LogitAggregation(stored_labels, median), SENTENCE_LOGITS, ScoreActivation.SIGMOID
+    )
+    expected: ClassificationResult = build_sentence_result(median)
+    np.testing.assert_allclose(again.scores, expected.scores)
+    assert again.class_logits.tolist() == expected.class_logits.tolist() == [2.25, 2.0]
+    assert again.matched_entry_ids.tolist() == [0, 5]
+    assert not again.scores.flags.writeable
+
+
+def test_a_result_needs_the_aggregation_of_its_layout() -> None:
+    layout: EmbeddingLayout = build_layout(DOG_PROMPT, PHOTO_TEMPLATES, SIMILARITY_MAX)
+    with pytest.raises(ValueError, match="entry labels of the layout"):
+        ClassificationResult(
+            layout=layout,
+            aggregation=LogitAggregation.of(build_layout()),
+            embedding_logits=SENTENCE_LOGITS,
+            score_activation=ScoreActivation.SIGMOID,
+        )
+
+
+def test_labels_merge_along_the_axis_of_a_unit() -> None:
+    label: EntryLabel = EntryLabel(1, 3, "a photo of a {}")
+    assert label.merged(AggregationUnit.TEMPLATE) == EntryLabel(1, 3, None)
+    assert label.merged(AggregationUnit.PROMPT) == EntryLabel(1, None, "a photo of a {}")
+    assert label.merged(AggregationUnit.TEMPLATE_AND_PROMPT) == EntryLabel(1, None, None)
+    with pytest.raises(ValueError, match="ordered by class"):
+        LogitAggregation((EntryLabel(1, 0, None), EntryLabel(0, 1, None)), SIMILARITY_MAX)

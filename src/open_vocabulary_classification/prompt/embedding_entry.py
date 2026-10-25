@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..options import AggregationUnit
+from .entry_label import EntryLabel
 
 
 @dataclass(frozen=True)
@@ -44,27 +45,17 @@ class EmbeddingEntry:
         if not self.sentences and not self.visual_query_ids:
             raise ValueError("an entry needs at least one sentence or visual query.")
 
-    def group_key(self, unit: AggregationUnit) -> tuple[int, int | None, str | None]:
+    @property
+    def label(self) -> EntryLabel:
         """
-        Key shared by the entries one aggregation step merges with this one.
-
-        Parameters
-        ----------
-        unit : AggregationUnit
-            Which entries of a class are merged.
+        What the members of the entry share.
 
         Returns
         -------
-        tuple[int, int | None, str | None]
-            Class with the query for ``TEMPLATE``, with the template for ``PROMPT``, alone otherwise.
+        EntryLabel
+            Class, query and template of the entry.
         """
-        match unit:
-            case AggregationUnit.TEMPLATE:
-                return (self.class_id, self.query_id, None)
-            case AggregationUnit.PROMPT:
-                return (self.class_id, None, self.template)
-            case AggregationUnit.TEMPLATE_AND_PROMPT:
-                return (self.class_id, None, None)
+        return EntryLabel(self.class_id, self.query_id, self.template)
 
     @classmethod
     def merged(cls, entries: Sequence["EmbeddingEntry"], unit: AggregationUnit) -> "EmbeddingEntry":
@@ -74,27 +65,27 @@ class EmbeddingEntry:
         Parameters
         ----------
         entries : Sequence[EmbeddingEntry]
-            Entries sharing ``group_key(unit)``.
+            Entries sharing ``label.merged(unit)``.
         unit : AggregationUnit
             Which axis the step merges.
 
         Returns
         -------
         EmbeddingEntry
-            Entry keeping the group key as its labels.
+            Entry labeled by the merged label of the group.
 
         Raises
         ------
         ValueError
-            If ``entries`` is empty or the entries do not share the group key.
+            If ``entries`` is empty or the entries do not share their merged label.
         """
-        if not entries or len({entry.group_key(unit) for entry in entries}) != 1:
-            raise ValueError("entries to merge must be non-empty and share their group key.")
-        class_id, query_id, template = entries[0].group_key(unit)
+        if not entries or len({entry.label.merged(unit) for entry in entries}) != 1:
+            raise ValueError("entries to merge must be non-empty and share their merged label.")
+        label: EntryLabel = entries[0].label.merged(unit)
         return cls(
-            class_id=class_id,
-            query_id=query_id,
-            template=template,
+            class_id=label.class_id,
+            query_id=label.query_id,
+            template=label.template,
             sentences=tuple(sentence for entry in entries for sentence in entry.sentences),
             visual_query_ids=tuple(query_id for entry in entries for query_id in entry.visual_query_ids),
         )

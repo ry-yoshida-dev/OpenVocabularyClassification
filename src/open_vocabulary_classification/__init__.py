@@ -17,6 +17,7 @@ from .options import (
 from .prompt import (
     EmbeddingEntry,
     EmbeddingLayout,
+    EntryLabel,
     Prompt,
     PromptKind,
     PromptQuery,
@@ -25,7 +26,7 @@ from .prompt import (
     VisualQuery,
     VisualReference,
 )
-from .result import Classification, ClassificationRecord, ClassificationResult, LogitAggregation
+from .result import Classification, ClassificationRecord, ClassificationResult, ClassScores, LogitAggregation
 from .settings import ClassifierSettings, PresetCatalog
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "AggregationStep",
     "AggregationTiming",
     "AggregationUnit",
+    "ClassScores",
     "Classification",
     "ClassificationRecord",
     "ClassificationResult",
@@ -41,6 +43,7 @@ __all__ = [
     "Device",
     "EmbeddingEntry",
     "EmbeddingLayout",
+    "EntryLabel",
     "ImageFit",
     "ImagePooling",
     "ImageTiling",
