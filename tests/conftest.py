@@ -121,6 +121,10 @@ def checkpoint_directory(tmp_path_factory: pytest.TempPathFactory) -> Path:
         directory / "clip"
     )
     clip_processor(directory / "clip_vocabulary").save_pretrained(directory / "clip")
+    CLIPModel.from_pretrained(directory / "clip").save_pretrained(directory / "clip_without_image_processor")
+    clip_processor(directory / "clip_without_image_processor_vocabulary").tokenizer.save_pretrained(
+        directory / "clip_without_image_processor"
+    )
     MetaClip2Model(
         MetaClip2Config(vision_config=VISION_CONFIG, text_config=CLIP_TEXT_CONFIG, projection_dim=16)
     ).save_pretrained(directory / "metaclip_2")

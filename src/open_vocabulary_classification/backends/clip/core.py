@@ -3,10 +3,20 @@ from typing import ClassVar, cast
 
 import torch
 from PIL import Image
-from transformers import BatchEncoding, BatchFeature, CLIPModel, CLIPProcessor, MetaClip2Model
+from transformers import (
+    AutoTokenizer,
+    BatchEncoding,
+    BatchFeature,
+    CLIPImageProcessor,
+    CLIPModel,
+    CLIPProcessor,
+    MetaClip2Model,
+    PreTrainedTokenizerBase,
+)
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 
 from ...options import ClassifierBackend, ImagePooling
+from ..checkpoint_config import CheckpointConfig
 from ..dual_encoder import DualEncoderClassifier
 
 
@@ -18,12 +28,27 @@ class ClipFamilyClassifier[ModelT: CLIPModel | MetaClip2Model](DualEncoderClassi
     the joint space. ``CLASS_TOKEN`` projects the normalized class token, as CLIP was trained; ``PATCH_MEAN``
     normalizes every patch token with the same layer norm and projects their mean. Logits are cosine similarities
     scaled by the learned temperature, without bias, and are turned into scores by a softmax over the classes.
+
+    A checkpoint without ``preprocessor_config.json`` (e.g. most Apple DFN CLIP weights) is preprocessed as OpenAI
+    CLIP was: bicubic resize of the shorter side and a center crop to the vision tower's resolution, normalized by the
+    OpenAI CLIP mean and standard deviation.
     """
 
     BACKEND: ClassVar[ClassifierBackend] = ClassifierBackend.CLIP
 
     def _load_processor(self, weights_path: str) -> CLIPProcessor:
-        return CLIPProcessor.from_pretrained(weights_path)
+        if CheckpointConfig.has_image_processor_config(weights_path):
+            return CLIPProcessor.from_pretrained(weights_path)
+        image_size: int = CheckpointConfig.read_image_size(weights_path)
+        tokenizer: object = cast(object, AutoTokenizer.from_pretrained(weights_path))
+        if not isinstance(tokenizer, PreTrainedTokenizerBase):
+            raise TypeError(f"expected a tokenizer for {weights_path}. got {type(tokenizer)}")
+        return CLIPProcessor(
+            image_processor=CLIPImageProcessor(
+                size={"shortest_edge": image_size}, crop_size={"height": image_size, "width": image_size}
+            ),
+            tokenizer=tokenizer,
+        )
 
     @property
     def _text_token_limit(self) -> int:

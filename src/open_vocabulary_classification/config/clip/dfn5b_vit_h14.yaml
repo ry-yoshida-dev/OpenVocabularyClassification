@@ -1,0 +1,10 @@
+classifier:
+  backend: clip
+  weights_path: apple/DFN5B-CLIP-ViT-H-14
+  image_pooling: class_token
+  image_fit: letterbox
+  text_templates:
+    - "a photo of a {}."
+  batch_size: 8
+  device: auto
+  precision: float32

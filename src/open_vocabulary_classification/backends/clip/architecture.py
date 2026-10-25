@@ -13,7 +13,7 @@ class ClipArchitecture(StrEnum):
     Attributes
     ----------
     CLIP : str
-        CLIP: OpenAI CLIP, OpenCLIP and MetaCLIP weights.
+        CLIP: OpenAI CLIP, OpenCLIP, MetaCLIP and DFN CLIP weights.
     METACLIP_2 : str
         MetaCLIP 2.
     """

@@ -173,6 +173,21 @@ def test_clip_patch_mean_projects_the_mean_of_normalized_patch_tokens(checkpoint
     assert not np.allclose(embeddings, class_token_embeddings, atol=1e-3)
 
 
+def test_clip_without_image_processor_is_preprocessed_as_openai_clip(checkpoint_directory: Path) -> None:
+    weights_path: Path = checkpoint_directory / "clip_without_image_processor"
+    assert not (weights_path / "preprocessor_config.json").exists()
+    classifier: OpenVocabularyClassifier = ClassifierSettings(
+        backend=ClassifierBackend.CLIP,
+        weights_path=str(weights_path),
+        image_pooling=ImagePooling.CLASS_TOKEN,
+        image_fit=ImageFit.NATIVE,
+        device=Device.CPU,
+    ).build()
+    reference: OpenVocabularyClassifier = build_classifier(checkpoint_directory, "clip")
+    np.testing.assert_allclose(classifier.embed_images(IMAGES), reference.embed_images(IMAGES), atol=1e-6)
+    np.testing.assert_allclose(classifier.embed_texts(CLASS_NAMES), reference.embed_texts(CLASS_NAMES), atol=1e-6)
+
+
 @pytest.mark.parametrize("image_pooling", [ImagePooling.ATTENTION, ImagePooling.PATCH_MEAN])
 def test_naflex_padding_does_not_change_embeddings(checkpoint_directory: Path, image_pooling: ImagePooling) -> None:
     classifier: OpenVocabularyClassifier = build_classifier(checkpoint_directory, "siglip2", image_pooling)

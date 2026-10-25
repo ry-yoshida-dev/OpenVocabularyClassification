@@ -18,7 +18,7 @@ presets of every supported model, and the backends implementing the interface.
 | [result/](./result/README.md) | `ClassificationResult`, `Classification` and its JSON-serializable `ClassificationRecord`. |
 | [cache/](./cache/README.md) | Thread-safe query embeddings cached per text query and per visual reference. |
 | [runtime/](./runtime/README.md) | `TorchRuntime`: device, precision, model preparation and input transfer for PyTorch-backed classifiers. |
-| [backends/](./backends/README.md) | CLIP-family (CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2) and SigLIP-family (SigLIP, SigLIP 2, SigLIP 2 NaFlex) classifiers. |
+| [backends/](./backends/README.md) | CLIP-family (CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2, DFN CLIP) and SigLIP-family (SigLIP, SigLIP 2, SigLIP 2 NaFlex) classifiers. |
 | [config/](./config/README.md) | YAML presets of every backend, loaded by `PresetCatalog`. |
 | [cli/](./cli/README.md) | `open-vocabulary-classify` command classifying image files and directories by text and reference images. |
 | [array_types.py](./array_types.py) | NumPy array aliases (`FloatArray`, `IntArray`, `BoolArray`). |

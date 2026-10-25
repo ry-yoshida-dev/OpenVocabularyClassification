@@ -12,8 +12,8 @@ weekly and on manual dispatch.
 
 | Component | Description |
 | --------- | ----------- |
-| [conftest.py](./conftest.py) | Session fixture saving tiny checkpoints with their processors and tokenizers; the `--run-pretrained` option. |
-| [test_backends.py](./test_backends.py) | Architecture selection, native pooling, logits and text embeddings equal to the `transformers` models, CLIP patch mean, NaFlex padding invariance, visual queries, classification from embeddings, tiling, letterboxing with the processor mean color (images and references, none for NaFlex), bfloat16 and text length limits. |
+| [conftest.py](./conftest.py) | Session fixture saving tiny checkpoints with their processors and tokenizers, and a CLIP checkpoint with its tokenizer only; the `--run-pretrained` option. |
+| [test_backends.py](./test_backends.py) | Architecture selection, OpenAI CLIP preprocessing of a checkpoint without an image processor, native pooling, logits and text embeddings equal to the `transformers` models, CLIP patch mean, NaFlex padding invariance, visual queries, classification from embeddings, tiling, letterboxing with the processor mean color (images and references, none for NaFlex), bfloat16 and text length limits. |
 | [test_pretrained.py](./test_pretrained.py) | Real CLIP, SigLIP, SigLIP 2 and SigLIP 2 NaFlex weights: embeddings and logits equal to `transformers`, solid colors named and found by text search. |
 | [test_cli.py](./test_cli.py) | Command-line prompt parsing, image discovery, text and JSON lines output, preset listing and argument errors. |
 | [test_image_tiling.py](./test_image_tiling.py) | Tile sizes, overlap, order and validation. |

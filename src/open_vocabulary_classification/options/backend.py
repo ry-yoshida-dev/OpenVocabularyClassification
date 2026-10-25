@@ -14,8 +14,8 @@ class ClassifierBackend(StrEnum):
     Attributes
     ----------
     CLIP : str
-        CLIP-architecture models through Hugging Face ``transformers``: OpenAI CLIP, OpenCLIP and MetaCLIP weights
-        (``model_type`` ``clip``) and MetaCLIP 2 (``metaclip_2``); the checkpoint decides which.
+        CLIP-architecture models through Hugging Face ``transformers``: OpenAI CLIP, OpenCLIP, MetaCLIP and DFN
+        CLIP weights (``model_type`` ``clip``) and MetaCLIP 2 (``metaclip_2``); the checkpoint decides which.
     SIGLIP : str
         SigLIP and SigLIP 2 through Hugging Face ``transformers``: fixed-resolution weights (``model_type`` ``siglip``)
         and SigLIP 2 NaFlex weights keeping the aspect ratio (``siglip2``); the checkpoint decides which.

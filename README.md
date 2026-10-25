@@ -2,7 +2,7 @@
 
 ## Overview
 
-`open_vocabulary_classification` puts CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2, SigLIP and SigLIP 2 behind one interface
+`open_vocabulary_classification` puts CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2, DFN CLIP, SigLIP and SigLIP 2 behind one interface
 so that models can be swapped and compared by changing configuration only. Application code builds a prompt, calls one
 `OpenVocabularyClassifier`, and reads one `ClassificationResult` type; which model runs is decided by a
 `ClassifierSettings`, normally built from a YAML preset.
@@ -40,7 +40,7 @@ so that models can be swapped and compared by changing configuration only. Appli
 
 | Backend | Models | Architectures (`model_type`) | Presets |
 | ------- | ------ | ---------------------------- | ------- |
-| `clip` | OpenAI CLIP, OpenCLIP (LAION), MetaCLIP, MetaCLIP 2 | `clip`, `metaclip_2` | `openai_vit_b32` ... `openai_vit_l14_336`, `laion_vit_b32` ... `laion_vit_bigg14`, `metaclip_vit_b16` ... `metaclip_vit_h14`, `metaclip2_vit_h14_*` |
+| `clip` | OpenAI CLIP, OpenCLIP (LAION), MetaCLIP, MetaCLIP 2, Apple DFN CLIP | `clip`, `metaclip_2` | `openai_vit_b32` ... `openai_vit_l14_336`, `laion_vit_b32` ... `laion_vit_bigg14`, `metaclip_vit_b16` ... `metaclip_vit_h14`, `metaclip2_vit_h14_*`, `dfn2b_vit_l14*`, `dfn5b_vit_h14*` |
 | `siglip` | SigLIP, SigLIP 2, SigLIP 2 NaFlex | `siglip`, `siglip2` | `v1_*`, `v2_*_224` ... `v2_giant_opt_patch16_384`, `v2_*_naflex` |
 
 A backend groups the models that share one implementation; the `model_type` in the checkpoint's `config.json` selects

@@ -20,6 +20,6 @@ sub-package (e.g. `backends.siglip`) when needed.
 | Component | Description |
 | --------- | ----------- |
 | [dual_encoder.py](./dual_encoder.py) | `DualEncoderClassifier`: model loading, logit scale and bias read once in `float32` before the precision cast, cached text, prompt and image embeddings, padded tokenization with a length check. |
-| [checkpoint_config.py](./checkpoint_config.py) | `CheckpointConfig`: reads the `model_type` of a `transformers` checkpoint without loading its weights. |
-| [clip/](./clip/README.md) | CLIP, OpenCLIP, MetaCLIP and MetaCLIP 2; class token or patch mean, softmax scores. |
+| [checkpoint_config.py](./checkpoint_config.py) | `CheckpointConfig`: reads the `model_type` and input resolution of a `transformers` checkpoint without loading its weights, and tells whether it ships an image processor configuration. |
+| [clip/](./clip/README.md) | CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2 and DFN CLIP; class token or patch mean, softmax scores. |
 | [siglip/](./siglip/README.md) | SigLIP, SigLIP 2 and SigLIP 2 NaFlex; attention pooling or patch mean, sigmoid scores. |

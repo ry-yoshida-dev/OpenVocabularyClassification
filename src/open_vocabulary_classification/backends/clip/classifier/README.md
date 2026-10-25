@@ -9,5 +9,5 @@ Concrete CLIP-family classifiers. Each loads its model class; everything else co
 
 | Component | Description |
 | --------- | ----------- |
-| [clip.py](./clip.py) | `ClipClassifier`: `CLIPModel`, for OpenAI CLIP, OpenCLIP and MetaCLIP weights. |
+| [clip.py](./clip.py) | `ClipClassifier`: `CLIPModel`, for OpenAI CLIP, OpenCLIP, MetaCLIP and DFN CLIP weights. |
 | [metaclip2.py](./metaclip2.py) | `MetaClip2Classifier`: `MetaClip2Model`, multilingual MetaCLIP 2. |
