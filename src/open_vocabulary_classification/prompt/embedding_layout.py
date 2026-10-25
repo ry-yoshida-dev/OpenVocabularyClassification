@@ -1,11 +1,9 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-import numpy as np
-
-from ..array_types import IntArray
-from ..options import TemplateCombination
+from ..options import AggregationTiming, PromptAggregation
 from .core import Prompt
 from .embedding_entry import EmbeddingEntry
+from .entry_groups import EntryGroups
 from .queries import TextQuery, VisualQuery
 from .text_templates import TextTemplates
 
@@ -13,48 +11,38 @@ from .text_templates import TextTemplates
 @dataclass(frozen=True)
 class EmbeddingLayout:
     """
-    Embeddings of a prompt the image is compared with, in embedding-id order, grouped by query.
+    Embeddings of a prompt the image is compared with, after the aggregation steps at ``EMBEDDING`` timing.
 
-    A visual query has one embedding. A text query has one embedding ensembling its sentences (``ENSEMBLE``) or one
-    per sentence in template order (every other ``TemplateCombination``). Layouts compare and hash by their prompt and
-    entries.
+    Every class starts as a table with a row per query and a column per template; a visual query fills one cell.
+    The ``EMBEDDING`` steps merge cells into representative embeddings, e.g. ensembling the templates of every
+    prompt. Entries are ordered by class. Layouts compare and hash by their fields.
 
     Attributes
     ----------
     prompt : Prompt
         Prompt the embeddings belong to.
+    aggregation : PromptAggregation
+        Aggregation whose ``EMBEDDING`` steps the entries went through.
     entries : tuple[EmbeddingEntry, ...]
         Every embedding in embedding-id order.
-    entry_query_ids : IntArray
-        Query of every embedding, non-decreasing, shape (E,); read-only.
 
     Raises
     ------
     ValueError
-        If the entries are not grouped by query in query-id order with at least one entry per query, or an entry of
-        a text query has no sentence or one of a visual query has some.
+        If the entries are not ordered by class or a class has none.
     """
 
     prompt: Prompt
+    aggregation: PromptAggregation
     entries: tuple[EmbeddingEntry, ...]
-    entry_query_ids: IntArray = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        query_ids: list[int] = [entry.query_id for entry in self.entries]
-        expected_ids: list[int] = sorted(query_ids)
-        if query_ids != expected_ids or sorted(set(query_ids)) != list(range(len(self.prompt.queries))):
-            raise ValueError("entries must be grouped by query in query-id order, at least one per query.")
-        for entry in self.entries:
-            if isinstance(self.prompt.queries[entry.query_id], VisualQuery) == bool(entry.sentences):
-                raise ValueError("text queries need sentences and visual queries none.")
-        entry_query_ids: IntArray = np.array(query_ids, dtype=np.int64)
-        entry_query_ids.setflags(write=False)
-        object.__setattr__(self, "entry_query_ids", entry_query_ids)
+        class_ids: list[int] = [entry.class_id for entry in self.entries]
+        if class_ids != sorted(class_ids) or sorted(set(class_ids)) != list(range(len(self.prompt.class_names))):
+            raise ValueError("entries must be ordered by class, at least one per class.")
 
     @classmethod
-    def of(
-        cls, prompt: Prompt, text_templates: TextTemplates, template_combination: TemplateCombination
-    ) -> "EmbeddingLayout":
+    def of(cls, prompt: Prompt, text_templates: TextTemplates, aggregation: PromptAggregation) -> "EmbeddingLayout":
         """
         Lay out the embeddings of a prompt.
 
@@ -64,29 +52,29 @@ class EmbeddingLayout:
             Prompt with text queries, visual queries or both.
         text_templates : TextTemplates
             Templates every text query is filled into.
-        template_combination : TemplateCombination
-            How the sentences of a text query are combined; only ``ENSEMBLE`` merges them into one embedding.
+        aggregation : PromptAggregation
+            Aggregation whose ``EMBEDDING`` steps merge the cells.
 
         Returns
         -------
         EmbeddingLayout
-            Entries of every query in query-id order.
+            Entries ordered by class.
         """
         entries: list[EmbeddingEntry] = []
         for query_id, query in enumerate(prompt.queries):
+            class_id: int = prompt.query_class_ids[query_id]
             match query:
                 case VisualQuery():
-                    entries.append(EmbeddingEntry(query_id=query_id, sentences=(), template=None))
+                    entries.append(EmbeddingEntry(class_id, query_id, None, (), (query_id,)))
                 case TextQuery(text=text):
-                    sentences: tuple[str, ...] = text_templates.fill(text)
-                    if template_combination.is_ensembled:
-                        entries.append(EmbeddingEntry(query_id=query_id, sentences=sentences, template=None))
-                    else:
-                        entries.extend(
-                            EmbeddingEntry(query_id=query_id, sentences=(sentence,), template=template)
-                            for sentence, template in zip(sentences, text_templates.templates, strict=True)
-                        )
-        return cls(prompt=prompt, entries=tuple(entries))
+                    entries.extend(
+                        EmbeddingEntry(class_id, query_id, template, (sentence,), ())
+                        for sentence, template in zip(text_templates.fill(text), text_templates.templates, strict=True)
+                    )
+        entries.sort(key=lambda entry: entry.class_id)
+        for step in aggregation.steps_at(AggregationTiming.EMBEDDING):
+            entries = list(EntryGroups.of(entries, step.unit).merged_entries)
+        return cls(prompt=prompt, aggregation=aggregation, entries=tuple(entries))
 
     def __len__(self) -> int:
         return len(self.entries)

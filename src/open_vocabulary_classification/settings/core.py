@@ -1,16 +1,8 @@
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING
 
-from ..options import (
-    ClassifierBackend,
-    Device,
-    ImageFit,
-    ImagePooling,
-    LogitCombination,
-    Precision,
-    TemplateCombination,
-)
+from ..options import AggregationStep, ClassifierBackend, Device, ImageFit, ImagePooling, Precision, PromptAggregation
 from ..prompt import TextTemplates
 from .config_values import ConfigValues
 
@@ -38,14 +30,9 @@ class ClassifierSettings:
         How images of any aspect ratio are fitted into the model input; ``LETTERBOX`` keeps the whole image.
     text_templates : tuple[str, ...]
         Templates with one ``{}`` each, filled with every text query; ``("{}",)`` uses the bare query.
-    template_combination : TemplateCombination
-        How the sentences of a text query are combined: ``ENSEMBLE`` averages their embeddings into one, ``SEPARATE``
-        keeps every sentence as a candidate of its class, ``MAX``, ``MEAN``, ``MEDIAN`` and ``MIN`` reduce their
-        logits into the query logit. The cosine similarity of ``MEAN`` is that of ``ENSEMBLE`` times the norm of the
-        averaged sentence embedding, which is below 1 and differs per query, so ``MEAN`` logits are smaller and can
-        rank queries differently.
-    query_combination : LogitCombination
-        How the candidates of a class, its queries or their sentences, become the class logit.
+    aggregation : PromptAggregation
+        Steps turning the embeddings of every class, one per prompt and template, into one class logit; by default the
+        templates of each prompt are ensembled into one embedding and each class takes its best prompt.
     batch_size : int
         Number of images per forward pass.
     device : Device
@@ -65,8 +52,7 @@ class ClassifierSettings:
     image_pooling: ImagePooling
     image_fit: ImageFit = ImageFit.LETTERBOX
     text_templates: tuple[str, ...] = ("{}",)
-    template_combination: TemplateCombination = TemplateCombination.ENSEMBLE
-    query_combination: LogitCombination = LogitCombination.MAX
+    aggregation: PromptAggregation = field(default_factory=PromptAggregation)
     batch_size: int = 8
     device: Device = Device.AUTO
     precision: Precision = Precision.FLOAT32
@@ -88,8 +74,8 @@ class ClassifierSettings:
         """
         Build settings from plain values, e.g. the ``classifier`` section of a parsed YAML or JSON document.
 
-        Enums are given by value (``backend: siglip``) and ``text_templates`` as a list; omitted optional fields take
-        their defaults.
+        Enums are given by value (``backend: siglip``), ``text_templates`` as a list and ``aggregation`` as a list of
+        steps with ``unit``, ``timing`` and ``method``; omitted optional fields take their defaults.
 
         Parameters
         ----------
@@ -123,10 +109,11 @@ class ClassifierSettings:
             image_pooling=required.image_pooling,
             image_fit=config_values.member("image_fit", ImageFit, required.image_fit),
             text_templates=config_values.texts("text_templates", required.text_templates),
-            template_combination=config_values.member(
-                "template_combination", TemplateCombination, required.template_combination
-            ),
-            query_combination=config_values.member("query_combination", LogitCombination, required.query_combination),
+            aggregation=PromptAggregation.of(
+                [AggregationStep.from_mapping(step) for step in config_values.mappings("aggregation")]
+            )
+            if "aggregation" in values
+            else required.aggregation,
             batch_size=config_values.integer("batch_size", required.batch_size),
             device=config_values.member("device", Device, required.device),
             precision=config_values.member("precision", Precision, required.precision),

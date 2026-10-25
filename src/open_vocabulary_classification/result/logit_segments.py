@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..array_types import BoolArray, FloatArray, IntArray
-from ..options import LogitCombination
+from ..options import AggregationMethod
 
 
 @dataclass(frozen=True, eq=False)
@@ -69,7 +69,7 @@ class LogitSegments:
         is_start: BoolArray = np.concatenate(([True], labels[1:] != labels[:-1]))
         return cls(starts=np.flatnonzero(is_start).astype(np.int64), size=labels.size)
 
-    def combine(self, logits: FloatArray, combination: LogitCombination) -> FloatArray:
+    def combine(self, logits: FloatArray, method: AggregationMethod) -> FloatArray:
         """
         Combine the logits of every segment into one.
 
@@ -77,7 +77,7 @@ class LogitSegments:
         ----------
         logits : FloatArray
             Logits the segments cover, shape (size,).
-        combination : LogitCombination
+        method : AggregationMethod
             How the logits of a segment become one.
 
         Returns
@@ -93,15 +93,17 @@ class LogitSegments:
         self._validate(logits)
         if self.is_singleton:
             return logits.astype(np.float64, copy=True)
-        match combination:
-            case LogitCombination.MAX:
+        match method:
+            case AggregationMethod.MAX:
                 return np.maximum.reduceat(logits, self.starts)
-            case LogitCombination.MEAN:
+            case AggregationMethod.MEAN:
                 return np.add.reduceat(logits, self.starts) / self.lengths
-            case LogitCombination.MEDIAN:
+            case AggregationMethod.MEDIAN:
                 return self._medians(logits)
-            case LogitCombination.MIN:
+            case AggregationMethod.MIN:
                 return np.minimum.reduceat(logits, self.starts)
+            case AggregationMethod.LOGSUMEXP:
+                return np.logaddexp.reduceat(logits, self.starts)
 
     def argmax(self, logits: FloatArray) -> IntArray:
         """

@@ -8,6 +8,10 @@ import pytest
 from PIL import Image
 
 from open_vocabulary_classification import (
+    AggregationMethod,
+    AggregationStep,
+    AggregationTiming,
+    AggregationUnit,
     ClassificationResult,
     ClassifierBackend,
     ClassifierSettings,
@@ -16,11 +20,10 @@ from open_vocabulary_classification import (
     ImageFit,
     ImagePooling,
     ImageTiling,
-    LogitCombination,
     OpenVocabularyClassifier,
     Prompt,
+    PromptAggregation,
     ScoreActivation,
-    TemplateCombination,
     TextQuery,
 )
 from open_vocabulary_classification.array_types import FloatArray
@@ -103,15 +106,12 @@ def build_settings(
     )
 
 
-def build_sentence_settings(
-    template_combination: TemplateCombination, query_combination: LogitCombination
-) -> ClassifierSettings:
-    return replace(
-        build_settings(),
-        text_templates=("{}", "a {}"),
-        template_combination=template_combination,
-        query_combination=query_combination,
-    )
+def build_sentence_settings(*specifications: str) -> ClassifierSettings:
+    steps: list[AggregationStep] = []
+    for specification in specifications:
+        unit, timing, method = specification.split(":")
+        steps.append(AggregationStep(AggregationUnit(unit), AggregationTiming(timing), AggregationMethod(method)))
+    return replace(build_settings(), text_templates=("{}", "a {}"), aggregation=PromptAggregation.of(steps))
 
 
 def expected_logit(image_width: int, text: str) -> float:
@@ -348,13 +348,15 @@ def test_per_sentence_templates_are_combined_as_the_settings_say() -> None:
     sentences: dict[str, float] = {
         sentence: expected_logit(13, sentence) for sentence in ("dog", "a dog", "puppy", "a puppy")
     }
-    classifier: StubClassifier = StubClassifier(build_sentence_settings(TemplateCombination.MEAN, LogitCombination.MIN))
+    classifier: StubClassifier = StubClassifier(
+        build_sentence_settings("template:similarity:mean", "prompt:similarity:min")
+    )
     result: ClassificationResult = classifier.classify(IMAGES[3], PROMPT)
     assert len(classifier.embedding_layout(PROMPT)) == 6
     dog_mean: float = (sentences["dog"] + sentences["a dog"]) / 2
     puppy_mean: float = (sentences["puppy"] + sentences["a puppy"]) / 2
     assert result.classification(0).logit == pytest.approx(min(dog_mean, puppy_mean))
-    classifier.settings = build_sentence_settings(TemplateCombination.SEPARATE, LogitCombination.MEAN)
+    classifier.settings = build_sentence_settings("template_and_prompt:similarity:mean")
     assert classifier.classify(IMAGES[3], PROMPT).classification(0).logit == pytest.approx(sum(sentences.values()) / 4)
     best_sentence: str = max(sentences, key=lambda sentence: sentences[sentence])
     assert classifier.classify(IMAGES[3], PROMPT).classification(0).matched_template == (

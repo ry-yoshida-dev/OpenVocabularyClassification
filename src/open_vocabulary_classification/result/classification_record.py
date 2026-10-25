@@ -14,22 +14,22 @@ class ClassificationRecord(TypedDict):
     score : float
         Score in ``[0, 1]``.
     logit : float
-        Logit combined from the queries of the class.
-    matched_query_kind : str
-        ``PromptKind`` value of the matched query, ``"text"`` or ``"visual"``.
+        Logit aggregated from the embeddings of the class.
+    matched_query_kind : str | None
+        ``PromptKind`` value of the matched query, ``"text"`` or ``"visual"``; ``None`` without a single matched query.
     matched_query_text : str | None
-        Phrase of a matched text query; ``None`` for a visual query.
+        Phrase of a matched text query; ``None`` otherwise.
     matched_query_reference_count : int | None
-        Number of reference images of a matched visual query; ``None`` for a text query.
+        Number of reference images of a matched visual query; ``None`` otherwise.
     matched_template : str | None
-        Template of the highest sentence of the matched query; ``None`` when ensembled or visual.
+        Template of the matched embedding; ``None`` without a single template.
     """
 
     class_id: int
     class_name: str
     score: float
     logit: float
-    matched_query_kind: str
+    matched_query_kind: str | None
     matched_query_text: str | None
     matched_query_reference_count: int | None
     matched_template: str | None

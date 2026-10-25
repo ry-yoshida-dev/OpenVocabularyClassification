@@ -18,19 +18,20 @@ class Classification:
     score : float
         Score in ``[0, 1]``: a share of the prompt classes for CLIP, an independent probability for SigLIP.
     logit : float
-        Logit combined from the queries of the class, comparable across prompts of the same classifier.
-    matched_query : PromptQuery
-        Query of the class that scored highest, e.g. ``TextQuery("puppy")`` for class ``"dog"``.
+        Logit aggregated from the embeddings of the class, comparable across prompts of the same classifier.
+    matched_query : PromptQuery | None
+        Query of the matched embedding, e.g. ``TextQuery("puppy")`` for class ``"dog"``; ``None`` when the prompts
+        were aggregated into one embedding before it was compared with the image.
     matched_template : str | None
-        Template of the highest sentence of ``matched_query``, e.g. ``"a photo of a {}."``; ``None`` when the
-        sentences were ensembled into one embedding or the query is visual.
+        Template of the matched embedding, e.g. ``"a photo of a {}."``; ``None`` when the templates were aggregated into
+        one embedding before it was compared with the image, or the matched query is visual.
     """
 
     class_id: int
     class_name: str
     score: float
     logit: float
-    matched_query: PromptQuery
+    matched_query: PromptQuery | None
     matched_template: str | None
 
     def to_record(self) -> ClassificationRecord:
@@ -42,19 +43,24 @@ class Classification:
         ClassificationRecord
             Flat, JSON-serializable copy; reference images are summarized by their count.
         """
+        matched_query_kind: str | None = None
+        matched_query_text: str | None = None
+        matched_query_reference_count: int | None = None
         match self.matched_query:
             case TextQuery(text=text):
-                matched_query_text: str | None = text
-                matched_query_reference_count: int | None = None
+                matched_query_kind = self.matched_query.kind.value
+                matched_query_text = text
             case VisualQuery(references=references):
-                matched_query_text = None
+                matched_query_kind = self.matched_query.kind.value
                 matched_query_reference_count = len(references)
+            case None:
+                pass
         return ClassificationRecord(
             class_id=self.class_id,
             class_name=self.class_name,
             score=self.score,
             logit=self.logit,
-            matched_query_kind=self.matched_query.kind.value,
+            matched_query_kind=matched_query_kind,
             matched_query_text=matched_query_text,
             matched_query_reference_count=matched_query_reference_count,
             matched_template=self.matched_template,

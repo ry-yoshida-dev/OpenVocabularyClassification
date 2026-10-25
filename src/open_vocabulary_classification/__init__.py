@@ -2,14 +2,17 @@ from .classifier import OpenVocabularyClassifier
 from .image_tiling import ImageTiling
 from .letterbox import Letterbox
 from .options import (
+    AggregationMethod,
+    AggregationStep,
+    AggregationTiming,
+    AggregationUnit,
     ClassifierBackend,
     Device,
     ImageFit,
     ImagePooling,
-    LogitCombination,
     Precision,
+    PromptAggregation,
     ScoreActivation,
-    TemplateCombination,
 )
 from .prompt import (
     EmbeddingEntry,
@@ -26,6 +29,10 @@ from .result import Classification, ClassificationRecord, ClassificationResult, 
 from .settings import ClassifierSettings, PresetCatalog
 
 __all__ = [
+    "AggregationMethod",
+    "AggregationStep",
+    "AggregationTiming",
+    "AggregationUnit",
     "Classification",
     "ClassificationRecord",
     "ClassificationResult",
@@ -39,15 +46,14 @@ __all__ = [
     "ImageTiling",
     "Letterbox",
     "LogitAggregation",
-    "LogitCombination",
     "OpenVocabularyClassifier",
     "Precision",
     "PresetCatalog",
     "Prompt",
+    "PromptAggregation",
     "PromptKind",
     "PromptQuery",
     "ScoreActivation",
-    "TemplateCombination",
     "TextQuery",
     "TextTemplates",
     "VisualQuery",

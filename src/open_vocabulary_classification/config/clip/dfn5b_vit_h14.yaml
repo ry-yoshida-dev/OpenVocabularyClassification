@@ -5,8 +5,9 @@ classifier:
   image_fit: letterbox
   text_templates:
     - "a photo of a {}."
-  template_combination: ensemble
-  query_combination: max
+  aggregation:
+    - {unit: template, timing: embedding, method: mean}
+    - {unit: prompt, timing: similarity, method: max}
   batch_size: 8
   device: auto
   precision: float32

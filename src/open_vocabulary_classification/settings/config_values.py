@@ -96,6 +96,40 @@ class ConfigValues:
             raise TypeError(f"{key} must be a list of strings. got {items}")
         return tuple(strings)
 
+    def mappings(self, key: str) -> tuple[Mapping[str, object], ...]:
+        """
+        Read a required list of mappings with string keys, e.g. a list of YAML objects.
+
+        Parameters
+        ----------
+        key : str
+            Field name.
+
+        Returns
+        -------
+        tuple[Mapping[str, object], ...]
+            Mappings in the given order.
+
+        Raises
+        ------
+        KeyError
+            If the key is missing.
+        TypeError
+            If the value is not a list of mappings with string keys.
+        """
+        value: object = self._required(key)
+        if not isinstance(value, list | tuple):
+            raise TypeError(f"{key} must be a list of mappings. got {type(value).__name__}")
+        mappings: list[Mapping[str, object]] = []
+        for item in cast(Sequence[object], value):
+            if not isinstance(item, Mapping):
+                raise TypeError(f"{key} must be a list of mappings. got {item!r}")
+            entries: Mapping[object, object] = cast(Mapping[object, object], item)
+            if not all(isinstance(entry_key, str) for entry_key in entries):
+                raise TypeError(f"{key} must have string keys. got {list(entries)}")
+            mappings.append({str(entry_key): entry_value for entry_key, entry_value in entries.items()})
+        return tuple(mappings)
+
     def integer(self, key: str, default: int) -> int:
         """
         Read an optional integer; booleans are rejected.

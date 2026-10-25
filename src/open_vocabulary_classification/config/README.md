@@ -6,9 +6,9 @@ Ready-made YAML presets of every supported model, one folder per `ClassifierBack
 size and input resolution (e.g. `openai_vit_l14_336`, `v2_so400m_patch16_naflex`).
 
 Each preset's `classifier` section maps one-to-one onto the fields of
-[`ClassifierSettings`](../settings/core.py) (enums written by value, `text_templates` as a list). Every preset
-ensembles its templates and takes the best query of each class (`template_combination: ensemble`,
-`query_combination: max`).
+[`ClassifierSettings`](../settings/core.py) (enums written by value, `text_templates` as a list, `aggregation` as a
+list of steps). Every preset averages the templates of each prompt into one embedding and takes the best prompt of
+each class.
 [`PresetCatalog`](../settings/presets.py) loads a preset by backend and name, or any YAML file in this format;
 `ClassifierSettings.from_mapping` or any dataclass builder reads the section from other configuration systems.
 Switching models means switching preset files. Every preset uses the pooling its model was trained with (`class_token` for CLIP, `attention` for SigLIP);
@@ -37,8 +37,9 @@ classifier:
     - "a photo of a {}."
     - "a blurry photo of a {}."
     - "a close-up photo of a {}."
-  template_combination: mean
-  query_combination: max
+  aggregation:
+    - {unit: template, timing: similarity, method: mean}
+    - {unit: prompt, timing: similarity, method: max}
   batch_size: 32
   device: auto
   precision: float32

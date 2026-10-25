@@ -123,7 +123,7 @@ def test_json_lines_output(checkpoint_directory: Path, image_directory: Path) ->
     assert len(classifications) == 1
 
 
-def test_template_and_query_combinations(checkpoint_directory: Path, image_directory: Path) -> None:
+def test_aggregation_steps(checkpoint_directory: Path, image_directory: Path) -> None:
     output: str = run(
         [
             str(image_directory / "b.png"),
@@ -136,10 +136,8 @@ def test_template_and_query_combinations(checkpoint_directory: Path, image_direc
             "--templates",
             "{}",
             "a {}",
-            "--template-combination",
-            "separate",
-            "--query-combination",
-            "mean",
+            "--aggregation",
+            "template_and_prompt:similarity:mean",
             "--classes",
             "dog:dog,puppy",
             "--format",
@@ -242,6 +240,34 @@ def test_visual_queries_from_the_command_line(checkpoint_directory: Path, image_
         (["image.png", "--classes", "cat", "--preset", "clip/openai_vit_b16", "--batch-size", "0"], "batch_size"),
         (["image.png", "--classes", "cat", "--preset", "clip/openai_vit_b16", "--tile-grid", "1"], "grid_size"),
         (["image.png", "--classes", "cat", "cat", "--preset", "clip/openai_vit_b16"], "more than once"),
+        (
+            ["image.png", "--classes", "cat", "--preset", "clip/openai_vit_b16", "--aggregation", "template"],
+            "unit:timing",
+        ),
+        (
+            [
+                "image.png",
+                "--classes",
+                "cat",
+                "--preset",
+                "clip/openai_vit_b16",
+                "--aggregation",
+                "template:embedding:max",
+            ],
+            "by mean only",
+        ),
+        (
+            [
+                "image.png",
+                "--classes",
+                "cat",
+                "--preset",
+                "clip/openai_vit_b16",
+                "--aggregation",
+                "prompt:similarity:max",
+            ],
+            "aggregation needs",
+        ),
     ],
 )
 def test_invalid_arguments_are_reported_before_loading(

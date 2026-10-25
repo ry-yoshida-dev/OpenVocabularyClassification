@@ -8,15 +8,7 @@ from typing import ClassVar, TextIO
 
 from ..classifier import OpenVocabularyClassifier
 from ..image_tiling import ImageTiling
-from ..options import (
-    ClassifierBackend,
-    Device,
-    ImageFit,
-    ImagePooling,
-    LogitCombination,
-    Precision,
-    TemplateCombination,
-)
+from ..options import AggregationStep, ClassifierBackend, Device, ImageFit, ImagePooling, Precision, PromptAggregation
 from ..prompt import Prompt, PromptQuery, TextQuery, VisualQuery, VisualReference
 from ..result import Classification, ClassificationRecord
 from ..settings import ClassifierSettings, PresetCatalog
@@ -31,7 +23,7 @@ class ClassifyCommand:
 
     Settings come from a packaged preset (``--preset clip/openai_vit_b16``), a YAML file in the preset format
     (``--config``) or a backend and weights (``--backend``, ``--weights``); ``--pooling``, ``--image-fit``,
-    ``--templates``, ``--template-combination``, ``--query-combination``, ``--batch-size``, ``--device`` and
+    ``--templates``, ``--aggregation`` (steps as ``unit:timing:method``), ``--batch-size``, ``--device`` and
     ``--precision`` override them. A class written as ``name:query,query`` (e.g. ``dog:dog,puppy``) is queried by each
     query and reported as ``name``; a query ``@path`` is a visual query whose references are the image file or the
     images of the directory at ``path`` (e.g. ``mug:@refs/mug``). A class given more than once collects the queries of
@@ -45,6 +37,7 @@ class ClassifyCommand:
     QUERY_SEPARATOR: ClassVar[str] = ","
     VISUAL_QUERY_PREFIX: ClassVar[str] = "@"
     PRESET_SEPARATOR: ClassVar[str] = "/"
+    STEP_SEPARATOR: ClassVar[str] = ":"
     DEFAULT_TEMPLATES: ClassVar[tuple[str, ...]] = ("a photo of a {}.",)
 
     @classmethod
@@ -181,16 +174,9 @@ class ClassifyCommand:
         )
         parser.add_argument("--templates", nargs="+", help="text templates with one {} each")
         parser.add_argument(
-            "--template-combination",
-            type=TemplateCombination,
-            choices=list(TemplateCombination),
-            help="ensemble the sentence embeddings of a text query, keep them separate or reduce their logits",
-        )
-        parser.add_argument(
-            "--query-combination",
-            type=LogitCombination,
-            choices=list(LogitCombination),
-            help="combine the query logits of a class",
+            "--aggregation",
+            nargs="+",
+            help="aggregation steps as unit:timing:method in order, e.g. template:embedding:mean prompt:similarity:max",
         )
         parser.add_argument("--batch-size", type=int)
         parser.add_argument("--device", type=Device, choices=list(Device))
@@ -232,16 +218,24 @@ class ClassifyCommand:
             image_pooling=base.image_pooling if namespace.pooling is None else namespace.pooling,
             image_fit=base.image_fit if namespace.image_fit is None else namespace.image_fit,
             text_templates=base.text_templates if namespace.templates is None else tuple(namespace.templates),
-            template_combination=(
-                base.template_combination if namespace.template_combination is None else namespace.template_combination
-            ),
-            query_combination=(
-                base.query_combination if namespace.query_combination is None else namespace.query_combination
-            ),
+            aggregation=base.aggregation
+            if namespace.aggregation is None
+            else cls._aggregation(parser, namespace.aggregation),
             batch_size=base.batch_size if namespace.batch_size is None else namespace.batch_size,
             device=base.device if namespace.device is None else namespace.device,
             precision=base.precision if namespace.precision is None else namespace.precision,
         )
+
+    @classmethod
+    def _aggregation(cls, parser: argparse.ArgumentParser, specifications: list[str]) -> PromptAggregation:
+        steps: list[AggregationStep] = []
+        for specification in specifications:
+            parts: list[str] = specification.split(cls.STEP_SEPARATOR)
+            if len(parts) != 3:
+                parser.error(f"--aggregation steps must be unit:timing:method. got {specification}")
+            unit, timing, method = parts
+            steps.append(AggregationStep.from_mapping({"unit": unit, "timing": timing, "method": method}))
+        return PromptAggregation.of(steps)
 
     @staticmethod
     def _write_presets(output: TextIO) -> None:

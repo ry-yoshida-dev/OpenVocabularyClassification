@@ -18,19 +18,23 @@ so that models can be swapped and compared by changing configuration only. Appli
   prompt without running the image tower again.
 - **Classes are separate from queries**: a `Prompt` maps each class name (class id = key order) to its queries, text
   phrases (`TextQuery`), reference images (`VisualQuery`) or both, e.g. `"dog"` by `"dog"`, `"puppy"` and photos of
-  the user's own dog. The highest query of a class is reported as matched.
-- **Templates and queries are combined step by step**: every text query is filled into the `text_templates` of the
-  settings (e.g. `"a photo of a {}."`). Each step is a setting of its own:
-  1. `template_combination`: `ensemble` averages the normalized sentence embeddings of a text query into one (prompt
-     ensembling, the default), `separate` passes every sentence on as a candidate of its own, and `max`, `mean`,
-     `median` or `min` reduce the sentence logits of the query into one.
-  2. `query_combination`: `max` (default), `mean`, `median` or `min` of the candidates of a class.
+  the user's own dog. The query and template of the best embedding of a class are reported as matched.
+- **Aggregation is configurable step by step**: every text query is filled into the `text_templates` of the settings
+  (e.g. `"a photo of a {}."`), so each class is a table of prompts (rows) and templates (columns). The `aggregation`
+  of the settings lists the steps turning that table into one class logit; each step has a
+  - `unit`: `template` (the templates of each prompt), `prompt` (the prompts of each template) or
+    `template_and_prompt` (the whole table at once),
+  - `timing`: `embedding` (the text embeddings are averaged into a representative embedding before they meet the
+    image) or `similarity` (the logits are aggregated before the score activation),
+  - `method`: `mean` for embeddings; `max`, `mean`, `median`, `min` or `logsumexp` for logits.
 
-  The defaults (`ensemble`, `max`) take the best query of each class. `mean` is not the same as `ensemble`: its
-  cosine similarity is that of `ensemble` times the norm of the averaged sentence embedding, which is below 1 and
-  differs per query, so its logits are smaller (a flatter CLIP softmax) and can rank queries differently. A `max` over more
-  candidates is biased upward, so logit thresholds hold for one set of templates and similar numbers of queries per
-  class.
+  One `template_and_prompt` step, or a `template` and a `prompt` step in either order, merge the table; a later step
+  never runs at an earlier timing, and at most one step runs at `embedding` (it averages every sentence of its group
+  at once, so averaging the whole table at `embedding` is one `template_and_prompt` step). The default, templates averaged at `embedding` and prompts by `max` at
+  `similarity`, is prompt ensembling as in the CLIP paper followed by the best prompt of each class. `logsumexp`
+  followed by a softmax gives the sum of the softmax scores of the aggregated logits, so aggregating after the
+  activation needs no timing of its own. A `max` over more embeddings is biased upward, so logit thresholds hold for
+  one aggregation and similar numbers of prompts and templates per class.
 - **Scores follow the training loss**: CLIP scores are a softmax over the prompt classes (exactly one class is
   assumed), SigLIP scores are independent sigmoids (any number of classes may apply). Raw logits are kept as well, and
   `filter_by_logit` thresholds them independently of the other classes. `to_records` serializes results as JSON.
@@ -143,12 +147,22 @@ every phrase matches; `classification.matched_template` tells which template of 
 ```python
 from dataclasses import replace
 
-from open_vocabulary_classification import LogitCombination, TemplateCombination
+from open_vocabulary_classification import (
+    AggregationMethod,
+    AggregationStep,
+    AggregationTiming,
+    AggregationUnit,
+    PromptAggregation,
+)
 
 classifier.settings = replace(
     classifier.settings,
-    template_combination=TemplateCombination.MEAN,
-    query_combination=LogitCombination.MIN,
+    aggregation=PromptAggregation.of(
+        [
+            AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.SIMILARITY, AggregationMethod.MEAN),
+            AggregationStep(AggregationUnit.PROMPT, AggregationTiming.SIMILARITY, AggregationMethod.MIN),
+        ]
+    ),
 )
 top = classifier.classify(image, Prompt.from_texts({"dog": ("dog", "puppy"), "cat": ("cat",)})).top
 print(top.class_name, top.matched_query, top.matched_template)

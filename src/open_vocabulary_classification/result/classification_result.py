@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 
 from ..array_types import FloatArray, IntArray
 from ..options import ScoreActivation
-from ..prompt import EmbeddingLayout, Prompt
+from ..prompt import EmbeddingEntry, EmbeddingLayout, Prompt
 from .class_logits import ClassLogits
 from .classification import Classification
 from .classification_record import ClassificationRecord
@@ -18,13 +18,11 @@ class ClassificationResult:
     """
     Model-independent class scores for one image.
 
-    ``aggregation`` combines the logits of the embeddings of a class in two steps: ``template_combination`` turns the
-    sentence logits of each text query into one query logit (``SEPARATE`` keeps every sentence as a candidate of its
-    own, ``ENSEMBLE`` has one embedding per query already), then ``query_combination`` turns the candidates of the
-    class into the class logit. The activation of the classifier turns the class logits into scores. The matched query
-    of a class is its highest candidate, e.g. ``"puppy"`` for class ``"dog"``, and the matched template is the highest
-    sentence of that candidate; with a ``mean``, ``median`` or ``min`` query combination the class logit is not the
-    logit of the matched query.
+    ``aggregation`` combines the logits of the embeddings of every class into one class logit, and the activation of the
+    classifier turns the class logits into scores. The matched embedding of a class is the one with the highest logit
+    among those its logit was reduced from; its query and template are reported as matched, e.g. ``"puppy"`` for class
+    ``"dog"``, where the embedding still has a single one. With a method other than ``max`` the class logit is not the
+    logit of the matched embedding.
     Iterating yields every class in class-id order. The arrays are read-only; ``embedding_logits`` is a copy of the
     given logits.
 
@@ -39,9 +37,7 @@ class ClassificationResult:
     class_logits : FloatArray
         Logit of every class, shape (C,).
     matched_entry_ids : IntArray
-        Highest sentence of the highest candidate of every class, indexing ``layout.entries``, shape (C,).
-    matched_query_ids : IntArray
-        Query of ``matched_entry_ids``, indexing ``prompt.queries``, shape (C,).
+        Matched embedding of every class, indexing ``layout.entries``, shape (C,).
     scores : FloatArray
         Score of every class in ``[0, 1]``, shape (C,).
 
@@ -56,7 +52,6 @@ class ClassificationResult:
     score_activation: ScoreActivation
     class_logits: FloatArray = field(init=False)
     matched_entry_ids: IntArray = field(init=False)
-    matched_query_ids: IntArray = field(init=False)
     scores: FloatArray = field(init=False)
 
     def __post_init__(self) -> None:
@@ -67,10 +62,8 @@ class ClassificationResult:
             raise ValueError("embedding_logits must be finite.")
         embedding_logits: FloatArray = self._read_only(self.embedding_logits.astype(np.float64, copy=True))
         class_logits: ClassLogits = self.aggregation.combine(embedding_logits)
-        matched_query_ids: IntArray = self.layout.entry_query_ids[class_logits.matched_entry_ids]
         object.__setattr__(self, "embedding_logits", embedding_logits)
         object.__setattr__(self, "matched_entry_ids", self._read_only(class_logits.matched_entry_ids))
-        object.__setattr__(self, "matched_query_ids", self._read_only(matched_query_ids))
         object.__setattr__(self, "class_logits", self._read_only(class_logits.logits))
         object.__setattr__(self, "scores", self._read_only(self.score_activation.apply(class_logits.logits)))
 
@@ -150,13 +143,14 @@ class ClassificationResult:
         """
         if not 0 <= class_id < len(self):
             raise IndexError(f"class_id must be in [0, {len(self)}). got {class_id}")
+        matched_entry: EmbeddingEntry = self.layout.entries[int(self.matched_entry_ids[class_id])]
         return Classification(
             class_id=class_id,
             class_name=self.prompt.class_names[class_id],
             score=float(self.scores[class_id]),
             logit=float(self.class_logits[class_id]),
-            matched_query=self.prompt.queries[int(self.matched_query_ids[class_id])],
-            matched_template=self.layout.entries[int(self.matched_entry_ids[class_id])].template,
+            matched_query=None if matched_entry.query_id is None else self.prompt.queries[matched_entry.query_id],
+            matched_template=matched_entry.template,
         )
 
     def score_of(self, class_name: str) -> float:

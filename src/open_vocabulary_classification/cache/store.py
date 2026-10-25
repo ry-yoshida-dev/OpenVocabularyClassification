@@ -4,7 +4,7 @@ from weakref import WeakKeyDictionary
 
 import torch
 
-from ..prompt import EmbeddingLayout, TextQuery, TextTemplates, VisualQuery, VisualReference
+from ..prompt import EmbeddingLayout, TextTemplates, VisualQuery, VisualReference
 from .core import EmbeddingCache
 from .least_recently_used import LeastRecentlyUsedMapping
 
@@ -14,12 +14,13 @@ class QueryEmbeddingStore:
     """
     Builds the embeddings of a prompt from embeddings cached per sentence and per reference.
 
-    An entry of text sentences averages their normalized embeddings (prompt ensembling when it holds every template);
-    a visual query averages the normalized embeddings of its references. Prompts sharing sentences or references
-    reuse the cached embeddings, whatever the templates and template embedding; only the assembly, one vectorized
-    segment sum over every entry, runs per prompt. At most ``sentence_cache_capacity`` sentences are kept, the least
-    recently used dropped first; reference embeddings are held weakly, so they are dropped together with their
-    reference. Every cached embedding owns its storage, so evicting it frees its memory. Both caches are thread-safe.
+    An entry averages the normalized embeddings of its members and normalizes the mean again: every sentence is a
+    member, and every visual query is one member averaging the normalized embeddings of its references. Prompts
+    sharing sentences or references reuse the cached embeddings, whatever the templates and aggregation; only the
+    assembly, one vectorized segment sum over every entry, runs per prompt. At most ``sentence_cache_capacity``
+    sentences are kept, the least recently used dropped first; reference embeddings are held weakly, so they are
+    dropped together with their reference. Every cached embedding owns its storage, so evicting it frees its memory.
+    Both caches are thread-safe.
 
     Attributes
     ----------
@@ -62,21 +63,20 @@ class QueryEmbeddingStore:
         """
         member_sentences: list[str] = []
         sentence_entry_ids: list[int] = []
-        member_references: list[VisualReference] = []
-        reference_entry_ids: list[int] = []
+        visual_embeddings: list[torch.Tensor] = []
+        visual_entry_ids: list[int] = []
         for entry_id, entry in enumerate(layout.entries):
-            match layout.prompt.queries[entry.query_id]:
-                case TextQuery():
-                    member_sentences.extend(entry.sentences)
-                    sentence_entry_ids.extend([entry_id] * len(entry.sentences))
-                case VisualQuery(references=references):
-                    member_references.extend(references)
-                    reference_entry_ids.extend([entry_id] * len(references))
-        member_embeddings: torch.Tensor = torch.stack(
-            self._sentences.get(member_sentences) + self._references.get(member_references)
-        )
+            member_sentences.extend(entry.sentences)
+            sentence_entry_ids.extend([entry_id] * len(entry.sentences))
+            for query_id in entry.visual_query_ids:
+                query: object = layout.prompt.queries[query_id]
+                if not isinstance(query, VisualQuery):
+                    raise TypeError(f"query {query_id} of a visual member must be a VisualQuery. got {query!r}")
+                visual_embeddings.append(self._visual_query_embedding(query))
+                visual_entry_ids.append(entry_id)
+        member_embeddings: torch.Tensor = torch.stack(self._sentences.get(member_sentences) + visual_embeddings)
         member_entry_ids: torch.Tensor = torch.tensor(
-            sentence_entry_ids + reference_entry_ids, dtype=torch.int64, device=member_embeddings.device
+            sentence_entry_ids + visual_entry_ids, dtype=torch.int64, device=member_embeddings.device
         )
         entry_sums: torch.Tensor = member_embeddings.new_zeros((len(layout), member_embeddings.shape[1]))
         return torch.nn.functional.normalize(entry_sums.index_add_(0, member_entry_ids, member_embeddings), dim=-1)
@@ -101,6 +101,10 @@ class QueryEmbeddingStore:
         sentence_embeddings: torch.Tensor = torch.stack(self._sentences.get(sentences))
         grouped_embeddings: torch.Tensor = sentence_embeddings.reshape(len(texts), len(text_templates), -1)
         return torch.nn.functional.normalize(grouped_embeddings.sum(dim=1), dim=-1)
+
+    def _visual_query_embedding(self, query: VisualQuery) -> torch.Tensor:
+        reference_embeddings: torch.Tensor = torch.stack(self._references.get(query.references))
+        return torch.nn.functional.normalize(reference_embeddings.mean(dim=0), dim=-1)
 
     def _embed_sentences(self, sentences: Sequence[str]) -> list[torch.Tensor]:
         return self._normalized_rows(self._checked(self.embed_sentences(sentences), len(sentences)))

@@ -6,16 +6,19 @@ import yaml
 
 import open_vocabulary_classification
 from open_vocabulary_classification import (
+    AggregationMethod,
+    AggregationStep,
+    AggregationTiming,
+    AggregationUnit,
     ClassifierBackend,
     ClassifierSettings,
     Device,
     ImageFit,
     ImagePooling,
-    LogitCombination,
     Precision,
     PresetCatalog,
+    PromptAggregation,
     ScoreActivation,
-    TemplateCombination,
     TextTemplates,
 )
 
@@ -159,20 +162,30 @@ def test_default_template_uses_the_bare_query() -> None:
     assert TextTemplates(settings.text_templates).fill("dog") == ("dog",)
 
 
-def test_combinations_are_read_by_value() -> None:
+def test_aggregation_is_read_as_a_list_of_steps() -> None:
     values: dict[str, object] = {
         "backend": "siglip",
         "weights_path": "siglip",
         "image_pooling": "attention",
-        "template_combination": "separate",
-        "query_combination": "median",
+        "aggregation": [
+            {"unit": "prompt", "timing": "embedding", "method": "mean"},
+            {"unit": "template", "timing": "similarity", "method": "median"},
+        ],
     }
     settings: ClassifierSettings = ClassifierSettings.from_mapping(values)
-    assert settings.template_combination is TemplateCombination.SEPARATE
-    assert settings.query_combination is LogitCombination.MEDIAN
+    assert settings.aggregation == PromptAggregation.of(
+        [
+            AggregationStep(AggregationUnit.PROMPT, AggregationTiming.EMBEDDING, AggregationMethod.MEAN),
+            AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.SIMILARITY, AggregationMethod.MEDIAN),
+        ]
+    )
     defaults: ClassifierSettings = ClassifierSettings.from_mapping(
         {"backend": "siglip", "weights_path": "siglip", "image_pooling": "attention"}
     )
-    assert defaults.template_combination is TemplateCombination.ENSEMBLE
-    with pytest.raises(ValueError, match="template_combination must be one of"):
-        ClassifierSettings.from_mapping({**values, "template_combination": "sum"})
+    assert defaults.aggregation == PromptAggregation()
+    with pytest.raises(ValueError, match="'sum' is not a valid AggregationMethod"):
+        ClassifierSettings.from_mapping(
+            {**values, "aggregation": [{"unit": "template_and_prompt", "timing": "similarity", "method": "sum"}]}
+        )
+    with pytest.raises(TypeError, match="list of mappings"):
+        ClassifierSettings.from_mapping({**values, "aggregation": "max"})

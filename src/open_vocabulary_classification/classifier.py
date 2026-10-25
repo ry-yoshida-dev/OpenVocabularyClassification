@@ -24,12 +24,11 @@ class OpenVocabularyClassifier(ABC):
 
     Images and queries are embedded into one joint space; the logit of an image and an embedding is the cosine
     similarity of their L2-normalized embeddings times ``logit_scale`` plus ``logit_bias``. A text query has one
-    embedding ensembling its template sentences or one per sentence, and the logits of a class are combined, as
-    ``settings.template_combination`` and ``settings.query_combination`` say; the activation of ``BACKEND`` scores the
-    classes. Subclasses embed images, text queries and prompt layouts and expose the scale and
-    bias of their model; how the model runs (PyTorch, ONNX Runtime, TensorRT, ...) is up to each
-    subclass and its runtime. Everything else, mini-batching, RGB conversion, tiling, scoring and shape checks, is
-    shared here.
+    embedding per template, and ``settings.aggregation`` merges the embeddings of every class, before or after they are
+    compared with the image, into one class logit; the activation of ``BACKEND`` scores the classes. Subclasses embed
+    images, text queries and prompt layouts and expose the scale and bias of their model; how the model runs (PyTorch,
+    ONNX Runtime, TensorRT, ...) is up to each subclass and its runtime. Everything else, mini-batching, RGB
+    conversion, tiling, scoring and shape checks, is shared here.
 
     The embeddings and logit aggregation of the ``PROMPT_CACHE_CAPACITY`` prompts used last are kept per prompt and
     settings, so classifying image after image with one prompt embeds it once and scores each image with a few
@@ -414,7 +413,7 @@ class OpenVocabularyClassifier(ABC):
         Embed text queries into the joint image-text space, e.g. to search images by text.
 
         Every text is filled into the text templates and the sentences are ensembled, as a ``TextQuery`` of a prompt is
-        with ``TemplateCombination.ENSEMBLE``, so ``embed_images(images) @ embed_texts(texts).T`` are the cosine
+        by the default aggregation, so ``embed_images(images) @ embed_texts(texts).T`` are the cosine
         similarities a classifier scores then. Embeddings are cached per sentence.
 
         Parameters
@@ -441,7 +440,7 @@ class OpenVocabularyClassifier(ABC):
 
     def embedding_layout(self, prompt: Prompt) -> EmbeddingLayout:
         """
-        Lay out the embeddings of a prompt as ``settings.text_templates`` and ``settings.template_combination`` say.
+        Lay out the embeddings of a prompt as ``settings.text_templates`` and ``settings.aggregation`` say.
 
         Parameters
         ----------
@@ -451,7 +450,7 @@ class OpenVocabularyClassifier(ABC):
         Returns
         -------
         EmbeddingLayout
-            Embeddings of every query in query-id order.
+            Embeddings ordered by class, after the ``EMBEDDING`` aggregation steps.
         """
         return self._embedding_layout(prompt, self.settings)
 
@@ -500,11 +499,7 @@ class OpenVocabularyClassifier(ABC):
         embeddings: FloatArray = self._checked_embeddings(self._embed_layout(layout), len(layout))
         embeddings.setflags(write=False)
         return PreparedPrompt(
-            aggregation=LogitAggregation(
-                layout=layout,
-                template_combination=settings.template_combination,
-                query_combination=settings.query_combination,
-            ),
+            aggregation=LogitAggregation(layout=layout),
             embeddings=embeddings,
         )
 
@@ -532,7 +527,7 @@ class OpenVocabularyClassifier(ABC):
 
     @staticmethod
     def _embedding_layout(prompt: Prompt, settings: ClassifierSettings) -> EmbeddingLayout:
-        return EmbeddingLayout.of(prompt, TextTemplates(settings.text_templates), settings.template_combination)
+        return EmbeddingLayout.of(prompt, TextTemplates(settings.text_templates), settings.aggregation)
 
     @staticmethod
     def _checked_embeddings(embeddings: FloatArray, expected_count: int) -> FloatArray:

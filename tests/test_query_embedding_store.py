@@ -6,9 +6,13 @@ import torch
 from PIL import Image
 
 from open_vocabulary_classification import (
+    AggregationMethod,
+    AggregationStep,
+    AggregationTiming,
+    AggregationUnit,
     EmbeddingLayout,
     Prompt,
-    TemplateCombination,
+    PromptAggregation,
     TextQuery,
     TextTemplates,
     VisualQuery,
@@ -53,12 +57,24 @@ def build_store(sentence_cache_capacity: int = 16) -> tuple[QueryEmbeddingStore,
     return store, embedder
 
 
+ENSEMBLED: PromptAggregation = PromptAggregation()
+PER_SENTENCE: PromptAggregation = PromptAggregation.of(
+    [
+        AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.SIMILARITY, AggregationMethod.MAX),
+        AggregationStep(AggregationUnit.PROMPT, AggregationTiming.SIMILARITY, AggregationMethod.MAX),
+    ]
+)
+REPRESENTATIVE: PromptAggregation = PromptAggregation.of(
+    [AggregationStep(AggregationUnit.TEMPLATE_AND_PROMPT, AggregationTiming.EMBEDDING, AggregationMethod.MEAN)]
+)
+
+
 def layout_of(
     prompt: Prompt,
     templates: TextTemplates = PLAIN_TEMPLATES,
-    template_combination: TemplateCombination = TemplateCombination.ENSEMBLE,
+    prompt_aggregation: PromptAggregation = ENSEMBLED,
 ) -> EmbeddingLayout:
-    return EmbeddingLayout.of(prompt, templates, template_combination)
+    return EmbeddingLayout.of(prompt, templates, prompt_aggregation)
 
 
 def build_reference(width: int, height: int) -> VisualReference:
@@ -163,18 +179,28 @@ def test_concurrent_prompts_embed_each_sentence_once() -> None:
 
 def test_per_sentence_keeps_one_embedding_per_template() -> None:
     store, _ = build_store()
-    layout: EmbeddingLayout = layout_of(
-        Prompt.from_class_names(("cat", "dog")), ARTICLE_TEMPLATES, TemplateCombination.SEPARATE
-    )
+    layout: EmbeddingLayout = layout_of(Prompt.from_class_names(("cat", "dog")), ARTICLE_TEMPLATES, PER_SENTENCE)
     torch.testing.assert_close(store.embed(layout), torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.0, 1.0], [1.0, 0.0]]))
     assert [entry.template for entry in layout.entries] == ["{}", "a {}", "{}", "a {}"]
-    assert layout.entry_query_ids.tolist() == [0, 0, 1, 1]
+    assert [entry.query_id for entry in layout.entries] == [0, 0, 1, 1]
 
 
-def test_sentences_are_shared_between_template_combinations() -> None:
+def test_representative_embedding_averages_sentences_and_visual_queries_as_members() -> None:
+    store, _ = build_store()
+    references: tuple[VisualReference, ...] = (build_reference(3, 0), build_reference(0, 3))
+    prompt: Prompt = Prompt({"pet": (TextQuery("cat"), TextQuery("dog"), VisualQuery(references))})
+    half_sqrt: float = 0.5**0.5
+    visual: list[float] = [half_sqrt, half_sqrt]
+    expected: torch.Tensor = torch.nn.functional.normalize(
+        torch.tensor([1.0, 0.0]) + torch.tensor([0.0, 1.0]) + torch.tensor(visual), dim=-1
+    )
+    torch.testing.assert_close(store.embed(layout_of(prompt, PLAIN_TEMPLATES, REPRESENTATIVE)), expected[None])
+
+
+def test_sentences_are_shared_between_aggregations() -> None:
     store, embedder = build_store()
     prompt: Prompt = Prompt.from_class_names(("cat",))
-    store.embed(layout_of(prompt, ARTICLE_TEMPLATES, TemplateCombination.SEPARATE))
+    store.embed(layout_of(prompt, ARTICLE_TEMPLATES, PER_SENTENCE))
     store.embed(layout_of(prompt, ARTICLE_TEMPLATES))
     store.embed_texts(["cat"], ARTICLE_TEMPLATES)
     assert embedder.embedded_sentences == [["cat", "a cat"]]
