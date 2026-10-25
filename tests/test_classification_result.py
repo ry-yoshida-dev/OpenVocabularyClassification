@@ -278,30 +278,62 @@ def test_visual_queries_form_a_group_of_their_own_per_template() -> None:
     assert result.classification(0).matched_template is None
 
 
-@pytest.mark.parametrize(
-    "steps",
-    [
-        (AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.SIMILARITY, AggregationMethod.MAX),),
-        (
-            AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.SIMILARITY, AggregationMethod.MAX),
-            AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.SIMILARITY, AggregationMethod.MAX),
-        ),
-        (
-            AggregationStep(AggregationUnit.TEMPLATE_AND_PROMPT, AggregationTiming.SIMILARITY, AggregationMethod.MAX),
-            AggregationStep(AggregationUnit.PROMPT, AggregationTiming.SIMILARITY, AggregationMethod.MAX),
-        ),
-    ],
-)
-def test_aggregations_must_merge_both_axes_once(steps: tuple[AggregationStep, ...]) -> None:
-    with pytest.raises(ValueError, match="aggregation needs"):
-        PromptAggregation.of(steps)
+def test_without_steps_every_sentence_is_a_candidate_and_a_class_takes_its_best() -> None:
+    logits: FloatArray = np.array([3.0, 2.0, 2.5, 1.0, 0.0, 4.0])
+    result: ClassificationResult = ClassificationResult(
+        aggregation=LogitAggregation(build_layout(DOG_PROMPT, PHOTO_TEMPLATES, PromptAggregation.of([]))),
+        embedding_logits=logits,
+        score_activation=ScoreActivation.SOFTMAX,
+    )
+    sentence_scores: FloatArray = np.exp(logits) / np.exp(logits).sum()
+    np.testing.assert_allclose(result.scores, [sentence_scores[0], sentence_scores[5]])
+    assert result.class_logits.tolist() == [3.0, 4.0]
+    assert result.matched_entry_ids.tolist() == [0, 5]
+    assert result.top.class_name == "cat"
+    assert result.classification(0).matched_template == "a photo of a {}"
 
 
-def test_aggregation_steps_run_at_a_non_decreasing_timing_and_embed_by_mean() -> None:
-    with pytest.raises(ValueError, match="earlier timing"):
-        aggregation("prompt:similarity:max", "template:embedding:mean")
-    with pytest.raises(ValueError, match="at most one step runs at embedding"):
-        aggregation("template:embedding:mean", "prompt:embedding:mean")
+def test_a_single_axis_leaves_one_candidate_per_remaining_row_or_column() -> None:
+    result: ClassificationResult = ClassificationResult(
+        aggregation=LogitAggregation(
+            build_layout(DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template:similarity:mean"))
+        ),
+        embedding_logits=np.array([3.0, 2.0, 2.5, 1.0, 0.0, 4.0]),
+        score_activation=ScoreActivation.SIGMOID,
+    )
+    assert result.class_logits.tolist() == [2.5, 2.0]
+    assert result.classification(0).matched_query == TextQuery("dog")
+
+
+def test_embedding_steps_must_not_follow_similarity_steps() -> None:
+    with pytest.raises(ValueError, match="must not follow similarity"):
+        aggregation("template:similarity:max", "prompt:embedding:mean")
+    layout: EmbeddingLayout = build_layout(
+        DOG_PROMPT, PHOTO_TEMPLATES, aggregation("prompt:embedding:mean", "template:similarity:max")
+    )
+    assert [(entry.class_id, entry.query_id, entry.template) for entry in layout.entries] == [
+        (0, None, "a photo of a {}"),
+        (0, None, "a drawing of a {}"),
+        (1, None, "a photo of a {}"),
+        (1, None, "a drawing of a {}"),
+    ]
+    result: ClassificationResult = ClassificationResult(
+        aggregation=LogitAggregation(layout),
+        embedding_logits=np.array([1.0, 2.0, 0.0, -1.0]),
+        score_activation=ScoreActivation.SIGMOID,
+    )
+    assert result.class_logits.tolist() == [2.0, 0.0]
+
+
+def test_stacked_embedding_steps_keep_the_groups_of_every_step() -> None:
+    layout: EmbeddingLayout = build_layout(
+        DOG_PROMPT, PHOTO_TEMPLATES, aggregation("template:embedding:mean", "prompt:embedding:mean")
+    )
+    assert layout.embedding_group_ids == ((0, 0, 1, 1, 2, 2), (0, 0, 1))
+    assert [len(entry.sentences) for entry in layout.entries] == [4, 2]
+
+
+def test_steps_embed_by_mean_only_and_read_from_plain_values() -> None:
     with pytest.raises(ValueError, match="by mean only"):
         AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.EMBEDDING, AggregationMethod.MAX)
     step: AggregationStep = AggregationStep.from_mapping({"unit": "prompt", "timing": "similarity", "method": "median"})

@@ -3,9 +3,10 @@
 ## Overview
 
 Model-independent classification output shared by every classifier. A `ClassificationResult` keeps the logit of every
-prompt embedding of one image and aggregates them per class by the `similarity` steps of the aggregation, after the
-`embedding` steps the layout went through. The `ScoreActivation` of the backend then turns the class logits into
-scores (softmax over classes for CLIP, independent sigmoids for SigLIP). Its arrays are read-only. A `LogitAggregation`
+prompt embedding of one image and reduces them to the candidates of every class by the `similarity` steps of the
+aggregation, after the `embedding` steps the layout went through. The `ScoreActivation` of the backend turns the
+candidate logits into scores (a softmax over every candidate for CLIP, independent sigmoids for SigLIP), and each
+class takes its best candidate. Its arrays are read-only. A `LogitAggregation`
 is prepared once per prompt; every step is a `LogitReduction` that sorts the logits by group and reduces the
 consecutive `LogitSegments` vectorized, so scoring an image takes a few NumPy calls. Every logit keeps the embedding
 of the highest logit it came from, reported as the matched query and template.
@@ -20,10 +21,10 @@ data, keeping in mind that a `max` over more embeddings per class is biased upwa
 | Component | Description |
 | --------- | ----------- |
 | [classification_result.py](./classification_result.py) | `ClassificationResult`: embedding logits, class logits, matched queries and templates and scores of one image; top class, top-k, score and logit thresholds, lookup by name and records. |
-| [logit_aggregation.py](./logit_aggregation.py) | `LogitAggregation`: layout of a prompt and the reductions of its `similarity` steps, aggregating the embedding logits of one image into class logits. |
+| [logit_aggregation.py](./logit_aggregation.py) | `LogitAggregation`: layout of a prompt and the reductions of its `similarity` steps, reducing the embedding logits of one image to candidate logits. |
 | [logit_reduction.py](./logit_reduction.py) | `LogitReduction`: one `similarity` step, reducing every group of logits and keeping the embedding of its highest logit. |
 | [logit_segments.py](./logit_segments.py) | `LogitSegments`: consecutive runs of a logit vector, reduced (`max`, `mean`, `median`, `min`, `logsumexp`) and arg-maxed run by run. |
-| [class_logits.py](./class_logits.py) | `ClassLogits`: class logits of one image and the embedding each class matched best. |
+| [candidate_logits.py](./candidate_logits.py) | `CandidateLogits`: logits of the candidates left for one image, ordered by class, and the embedding behind each. |
 | [classification.py](./classification.py) | `Classification`: one class (id, name, score, logit, matched query and template), yielded by iterating a result. |
 | [classification_record.py](./classification_record.py) | `ClassificationRecord`: flat, JSON-serializable form of a `Classification`. |
 

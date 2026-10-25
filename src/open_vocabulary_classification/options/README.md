@@ -13,7 +13,7 @@ aggregated, and how its logits become scores.
 | [backend.py](./backend.py) | `ClassifierBackend`: classifier family, the image poolings it offers, the pooling it was trained with and its score activation. |
 | [image_pooling.py](./image_pooling.py) | `ImagePooling`: class token, attention pooling or global average pooling of patch tokens. |
 | [image_fit.py](./image_fit.py) | `ImageFit`: `letterbox` pads images to a square to keep them whole, `native` uses the checkpoint's own preprocessing. |
-| [prompt_aggregation.py](./prompt_aggregation.py) | `PromptAggregation`: the steps turning the prompt × template table of every class into one logit; one `template_and_prompt` step or a `template` and a `prompt` step, at non-decreasing timings, at most one at `embedding`. |
+| [prompt_aggregation.py](./prompt_aggregation.py) | `PromptAggregation`: any steps merging the prompt × template table of every class into candidates, in the order they run; `embedding` steps must not follow `similarity` steps. |
 | [aggregation_step.py](./aggregation_step.py) | `AggregationStep`: unit, timing and method of one step; embeddings by `mean` only. |
 | [aggregation_unit.py](./aggregation_unit.py) | `AggregationUnit`: `template`, `prompt` or `template_and_prompt`. |
 | [aggregation_timing.py](./aggregation_timing.py) | `AggregationTiming`: `embedding` (before the image is compared) or `similarity` (before the score activation). |

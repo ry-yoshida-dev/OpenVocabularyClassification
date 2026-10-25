@@ -23,12 +23,13 @@ class ClassifyCommand:
 
     Settings come from a packaged preset (``--preset clip/openai_vit_b16``), a YAML file in the preset format
     (``--config``) or a backend and weights (``--backend``, ``--weights``); ``--pooling``, ``--image-fit``,
-    ``--templates``, ``--aggregation`` (steps as ``unit:timing:method``), ``--batch-size``, ``--device`` and
-    ``--precision`` override them. A class written as ``name:query,query`` (e.g. ``dog:dog,puppy``) is queried by each
-    query and reported as ``name``; a query ``@path`` is a visual query whose references are the image file or the
-    images of the directory at ``path`` (e.g. ``mug:@refs/mug``). A class given more than once collects the queries of
-    every argument. Images are read one mini-batch at a time, upright as their EXIF orientation says; files that cannot
-    be decoded are reported on the error stream and skipped. Invalid arguments are reported before the model is loaded.
+    ``--templates``, ``--aggregation`` (steps as ``unit:timing:method``, or ``none``), ``--batch-size``,
+    ``--device`` and ``--precision`` override them. A class written as ``name:query,query`` (e.g. ``dog:dog,puppy``)
+    is queried by each query and reported as ``name``; a query ``@path`` is a visual query whose references are the
+    image file or the images of the directory at ``path`` (e.g. ``mug:@refs/mug``). A class given more than once
+    collects the queries of every argument. Images are read one mini-batch at a time, upright as their EXIF
+    orientation says; files that cannot be decoded are reported on the error stream and skipped. Invalid arguments
+    are reported before the model is loaded.
 
     Installed as the ``open-vocabulary-classify`` script.
     """
@@ -38,6 +39,7 @@ class ClassifyCommand:
     VISUAL_QUERY_PREFIX: ClassVar[str] = "@"
     PRESET_SEPARATOR: ClassVar[str] = "/"
     STEP_SEPARATOR: ClassVar[str] = ":"
+    NO_AGGREGATION: ClassVar[str] = "none"
     DEFAULT_TEMPLATES: ClassVar[tuple[str, ...]] = ("a photo of a {}.",)
 
     @classmethod
@@ -176,7 +178,7 @@ class ClassifyCommand:
         parser.add_argument(
             "--aggregation",
             nargs="+",
-            help="aggregation steps as unit:timing:method in order, e.g. template:embedding:mean prompt:similarity:max",
+            help="aggregation steps as unit:timing:method, e.g. template:embedding:mean prompt:similarity:max, or none",
         )
         parser.add_argument("--batch-size", type=int)
         parser.add_argument("--device", type=Device, choices=list(Device))
@@ -228,6 +230,8 @@ class ClassifyCommand:
 
     @classmethod
     def _aggregation(cls, parser: argparse.ArgumentParser, specifications: list[str]) -> PromptAggregation:
+        if specifications == [cls.NO_AGGREGATION]:
+            return PromptAggregation.of([])
         steps: list[AggregationStep] = []
         for specification in specifications:
             parts: list[str] = specification.split(cls.STEP_SEPARATOR)

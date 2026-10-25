@@ -10,13 +10,13 @@ from .aggregation_unit import AggregationUnit
 @dataclass(frozen=True)
 class PromptAggregation:
     """
-    The aggregation steps turning the embeddings of every class, one per prompt and template, into one class logit.
+    The aggregation steps merging the embeddings of every class, a table of prompts and templates, into candidates.
 
-    Either one ``TEMPLATE_AND_PROMPT`` step merges everything at once, or a ``TEMPLATE`` and a ``PROMPT`` step merge
-    the two axes one after the other, in the given order; a later step never runs at an earlier timing. At most one
-    step runs at ``EMBEDDING``: it averages every member of its group at once, so stacking two would equal one
-    ``TEMPLATE_AND_PROMPT`` step instead of a mean of means. The default is prompt ensembling as in the CLIP paper
-    followed by the best prompt of each class.
+    Steps run in the given order: steps at ``EMBEDDING`` first, each averaging its groups of embeddings into
+    normalized representative embeddings, then steps at ``SIMILARITY``, each reducing the logits of its groups.
+    Whatever the steps leave are the candidates of a class, e.g. every sentence without any step. The score
+    activation runs over every candidate, and a class scores its best candidate. The default is prompt ensembling as
+    in the CLIP paper followed by the best prompt of each class.
 
     Attributes
     ----------
@@ -26,8 +26,7 @@ class PromptAggregation:
     Raises
     ------
     ValueError
-        If the steps do not merge both axes exactly once, run at a decreasing timing or more than one runs at
-        ``EMBEDDING``.
+        If an ``EMBEDDING`` step follows a ``SIMILARITY`` step.
     """
 
     steps: tuple[AggregationStep, ...] = (
@@ -36,24 +35,12 @@ class PromptAggregation:
     )
 
     def __post_init__(self) -> None:
-        units: list[AggregationUnit] = [step.unit for step in self.steps]
-        is_complete: bool = units == [AggregationUnit.TEMPLATE_AND_PROMPT] or sorted(units) == sorted(
-            [AggregationUnit.TEMPLATE, AggregationUnit.PROMPT]
-        )
-        if not is_complete:
-            raise ValueError(
-                "aggregation needs one template_and_prompt step, or one template and one prompt step. "
-                + f"got {[unit.value for unit in units]}"
-            )
         timings: list[AggregationTiming] = [step.timing for step in self.steps]
-        order: list[AggregationTiming] = list(AggregationTiming)
-        if [order.index(timing) for timing in timings] != sorted(order.index(timing) for timing in timings):
+        timing_order: list[AggregationTiming] = list(AggregationTiming)
+        timing_ranks: list[int] = [timing_order.index(timing) for timing in timings]
+        if timing_ranks != sorted(timing_ranks):
             raise ValueError(
-                f"a later step must not run at an earlier timing. got {[timing.value for timing in timings]}"
-            )
-        if timings.count(AggregationTiming.EMBEDDING) > 1:
-            raise ValueError(
-                "at most one step runs at embedding; use one template_and_prompt step to average the whole table."
+                f"embedding steps must not follow similarity steps. got {[timing.value for timing in timings]}"
             )
 
     @classmethod

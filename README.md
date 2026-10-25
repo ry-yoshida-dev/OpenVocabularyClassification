@@ -21,19 +21,20 @@ so that models can be swapped and compared by changing configuration only. Appli
   the user's own dog. The query and template of the best embedding of a class are reported as matched.
 - **Aggregation is configurable step by step**: every text query is filled into the `text_templates` of the settings
   (e.g. `"a photo of a {}."`), so each class is a table of prompts (rows) and templates (columns). The `aggregation`
-  of the settings lists the steps turning that table into one class logit; each step has a
+  of the settings lists the steps merging that table into candidates; each step has a
   - `unit`: `template` (the templates of each prompt), `prompt` (the prompts of each template) or
     `template_and_prompt` (the whole table at once),
   - `timing`: `embedding` (the text embeddings are averaged into a representative embedding before they meet the
     image) or `similarity` (the logits are aggregated before the score activation),
   - `method`: `mean` for embeddings; `max`, `mean`, `median`, `min` or `logsumexp` for logits.
 
-  One `template_and_prompt` step, or a `template` and a `prompt` step in either order, merge the table; a later step
-  never runs at an earlier timing, and at most one step runs at `embedding` (it averages every sentence of its group
-  at once, so averaging the whole table at `embedding` is one `template_and_prompt` step). The default, templates averaged at `embedding` and prompts by `max` at
-  `similarity`, is prompt ensembling as in the CLIP paper followed by the best prompt of each class. `logsumexp`
-  followed by a softmax gives the sum of the softmax scores of the aggregated logits, so aggregating after the
-  activation needs no timing of its own. A `max` over more embeddings is biased upward, so logit thresholds hold for
+  Any steps may be combined in the order they run, `embedding` steps before `similarity` steps, and stacked
+  `embedding` steps average the averages. Whatever is left are the candidates of a class, e.g. every
+  sentence without any step (`aggregation: []`); the score activation runs over every candidate and a class scores its
+  best one. The default, templates averaged at `embedding` and prompts by `max` at
+  `similarity`, is prompt ensembling as in the CLIP paper followed by the best prompt of each class. When the steps
+  leave one candidate per class, `logsumexp` followed by a softmax gives the sum of the softmax scores of the
+  aggregated logits, so aggregating after the activation needs no timing of its own. A `max` over more embeddings is biased upward, so logit thresholds hold for
   one aggregation and similar numbers of prompts and templates per class.
 - **Scores follow the training loss**: CLIP scores are a softmax over the prompt classes (exactly one class is
   assumed), SigLIP scores are independent sigmoids (any number of classes may apply). Raw logits are kept as well, and

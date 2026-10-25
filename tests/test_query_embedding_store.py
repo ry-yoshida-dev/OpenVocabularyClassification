@@ -204,3 +204,18 @@ def test_sentences_are_shared_between_aggregations() -> None:
     store.embed(layout_of(prompt, ARTICLE_TEMPLATES))
     store.embed_texts(["cat"], ARTICLE_TEMPLATES)
     assert embedder.embedded_sentences == [["cat", "a cat"]]
+
+
+def test_stacked_embedding_steps_average_the_averages() -> None:
+    store, _ = build_store()
+    stacked: PromptAggregation = PromptAggregation.of(
+        [
+            AggregationStep(AggregationUnit.TEMPLATE, AggregationTiming.EMBEDDING, AggregationMethod.MEAN),
+            AggregationStep(AggregationUnit.PROMPT, AggregationTiming.EMBEDDING, AggregationMethod.MEAN),
+        ]
+    )
+    prompt: Prompt = Prompt.from_texts({"pet": ("cat", "dog")})
+    cat: torch.Tensor = torch.nn.functional.normalize(torch.tensor([1.0, 0.0]) + torch.tensor([0.0, 1.0]), dim=-1)
+    dog: torch.Tensor = torch.nn.functional.normalize(torch.tensor([0.0, 1.0]) + torch.tensor([1.0, 0.0]), dim=-1)
+    expected: torch.Tensor = torch.nn.functional.normalize(cat + dog, dim=-1)
+    torch.testing.assert_close(store.embed(layout_of(prompt, ARTICLE_TEMPLATES, stacked)), expected[None])

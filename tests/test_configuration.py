@@ -189,3 +189,13 @@ def test_aggregation_is_read_as_a_list_of_steps() -> None:
         )
     with pytest.raises(TypeError, match="list of mappings"):
         ClassifierSettings.from_mapping({**values, "aggregation": "max"})
+    with pytest.raises(ValueError, match="must not follow similarity"):
+        ClassifierSettings.from_mapping(
+            {
+                **values,
+                "aggregation": [
+                    {"unit": "template", "timing": "similarity", "method": "median"},
+                    {"unit": "prompt", "timing": "embedding", "method": "mean"},
+                ],
+            }
+        )
