@@ -22,8 +22,8 @@ class Prompt:
             "my mug": (VisualQuery((mug_reference_1, mug_reference_2)),),
         })
 
-    The model scores every query against the image; each class takes the logit of its best query and reports that
-    query as matched.
+    The model scores every query against the image; the classifier settings say how the logits of the queries of a
+    class are combined into the class logit, and the highest query of a class is reported as matched.
 
     Attributes
     ----------

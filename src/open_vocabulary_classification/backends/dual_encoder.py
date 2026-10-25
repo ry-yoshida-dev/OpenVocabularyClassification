@@ -11,7 +11,7 @@ from transformers import BatchEncoding, PreTrainedModel, ProcessorMixin
 from ..array_types import FloatArray
 from ..cache import QueryEmbeddingStore
 from ..classifier import OpenVocabularyClassifier
-from ..prompt import Prompt, TextTemplates, VisualReference
+from ..prompt import EmbeddingLayout, TextTemplates, VisualReference
 from ..runtime import TorchRuntime
 from ..settings import ClassifierSettings
 
@@ -21,7 +21,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
     Base of classifiers backed by a Hugging Face ``transformers`` dual encoder, whose image and text towers embed
     into one space where the scaled cosine similarity (plus a bias for SigLIP) is the logit.
 
-    Text queries are embedded through the text templates and cached per query; visual queries are embedded by the
+    Text queries are embedded through the text templates and cached per sentence; visual queries are embedded by the
     image tower with the configured pooling and cached per reference. The logit scale and bias are read from the model
     once after loading, before the model is cast to ``settings.precision``, so a half-precision model scores with the
     exact learned values. Subclasses load the model and processor, encode sentences and pooled images, and read the
@@ -29,7 +29,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
     """
 
     TEXT_BATCH_SIZE: ClassVar[int] = 256
-    TEXT_CACHE_CAPACITY: ClassVar[int] = 4096
+    SENTENCE_CACHE_CAPACITY: ClassVar[int] = 16384
 
     def __init__(self, settings: ClassifierSettings) -> None:
         """
@@ -52,8 +52,7 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         self._query_embeddings: QueryEmbeddingStore = QueryEmbeddingStore(
             embed_sentences=self._embed_sentences,
             embed_references=self._embed_references,
-            text_templates=TextTemplates(settings.text_templates),
-            text_cache_capacity=self.TEXT_CACHE_CAPACITY,
+            sentence_cache_capacity=self.SENTENCE_CACHE_CAPACITY,
         )
 
     @abstractmethod
@@ -194,10 +193,10 @@ class DualEncoderClassifier[ModelT: PreTrainedModel, ProcessorT: ProcessorMixin]
         return self._to_array(self._embed_image_tensor(images))
 
     def _embed_texts(self, texts: Sequence[str]) -> FloatArray:
-        return self._to_array(self._query_embeddings.embed_texts(texts))
+        return self._to_array(self._query_embeddings.embed_texts(texts, TextTemplates(self.settings.text_templates)))
 
-    def _embed_prompt(self, prompt: Prompt) -> FloatArray:
-        return self._to_array(self._query_embeddings.embed(prompt))
+    def _embed_layout(self, layout: EmbeddingLayout) -> FloatArray:
+        return self._to_array(self._query_embeddings.embed(layout))
 
     def _embed_image_tensor(self, images: Sequence[Image.Image]) -> torch.Tensor:
         with torch.inference_mode():

@@ -1,5 +1,6 @@
 import math
 from collections.abc import Iterator, Sequence
+from dataclasses import replace
 from typing import ClassVar
 
 import numpy as np
@@ -11,12 +12,15 @@ from open_vocabulary_classification import (
     ClassifierBackend,
     ClassifierSettings,
     Device,
+    EmbeddingLayout,
     ImageFit,
     ImagePooling,
     ImageTiling,
+    LogitCombination,
     OpenVocabularyClassifier,
     Prompt,
     ScoreActivation,
+    TemplateCombination,
     TextQuery,
 )
 from open_vocabulary_classification.array_types import FloatArray
@@ -60,8 +64,17 @@ class StubClassifier(OpenVocabularyClassifier):
         self.embedded_texts.append(list(texts))
         return np.array([unit_vector(len(text) / 10) for text in texts], dtype=np.float64)
 
-    def _embed_prompt(self, prompt: Prompt) -> FloatArray:
-        return self._embed_texts([query.text for query in prompt.queries if isinstance(query, TextQuery)])
+    def _embed_layout(self, layout: EmbeddingLayout) -> FloatArray:
+        sentence_embeddings: FloatArray = self._embed_texts(
+            [sentence for entry in layout.entries for sentence in entry.sentences]
+        )
+        embeddings: list[FloatArray] = []
+        start: int = 0
+        for entry in layout.entries:
+            mean: FloatArray = sentence_embeddings[start : start + len(entry.sentences)].mean(axis=0)
+            embeddings.append(mean / np.linalg.norm(mean))
+            start += len(entry.sentences)
+        return np.stack(embeddings)
 
 
 class BrokenClassifier(StubClassifier):
@@ -70,6 +83,9 @@ class BrokenClassifier(StubClassifier):
 
     def _embed_texts(self, texts: Sequence[str]) -> FloatArray:
         return np.zeros((len(texts) + 1, 2))
+
+    def _embed_layout(self, layout: EmbeddingLayout) -> FloatArray:
+        return np.zeros((len(layout) + 1, 2))
 
 
 def build_settings(
@@ -87,6 +103,17 @@ def build_settings(
     )
 
 
+def build_sentence_settings(
+    template_combination: TemplateCombination, query_combination: LogitCombination
+) -> ClassifierSettings:
+    return replace(
+        build_settings(),
+        text_templates=("{}", "a {}"),
+        template_combination=template_combination,
+        query_combination=query_combination,
+    )
+
+
 def expected_logit(image_width: int, text: str) -> float:
     return 10.0 * math.cos(image_width / 10 - len(text) / 10) - 1.0
 
@@ -101,10 +128,12 @@ def test_classify_images_batches_converts_and_scores() -> None:
     assert classifier.mini_batch_sizes == [2, 2, 1]
     assert classifier.image_modes == {"RGB"}
     assert len(results) == 5
-    np.testing.assert_allclose(results[3].query_logits, [expected_logit(13, text) for text in ("dog", "puppy", "cat")])
+    np.testing.assert_allclose(
+        results[3].embedding_logits, [expected_logit(13, text) for text in ("dog", "puppy", "cat")]
+    )
     assert results[3].score_activation is ScoreActivation.SOFTMAX
     assert results[3].top.matched_query == TextQuery("puppy")
-    np.testing.assert_allclose(classifier.classify(IMAGES[0], PROMPT).query_logits, results[0].query_logits)
+    np.testing.assert_allclose(classifier.classify(IMAGES[0], PROMPT).embedding_logits, results[0].embedding_logits)
 
 
 def test_classify_embeddings_equals_classify_images() -> None:
@@ -115,7 +144,7 @@ def test_classify_embeddings_equals_classify_images() -> None:
     assert len(classifier.mini_batch_sizes) == image_tower_calls
     from_images: list[ClassificationResult] = classifier.classify_images(IMAGES, PROMPT)
     for embedded, direct in zip(from_embeddings, from_images, strict=True):
-        np.testing.assert_allclose(embedded.query_logits, direct.query_logits)
+        np.testing.assert_allclose(embedded.embedding_logits, direct.embedding_logits)
 
 
 @pytest.mark.parametrize(
@@ -158,7 +187,7 @@ def test_tiling_keeps_the_best_logit_of_every_view() -> None:
     assert classifier.mini_batch_sizes == [2, 2, 1]
     assert sorted(image.width for image in classifier.images) == [20, 20, 20, 20, 40]
     np.testing.assert_allclose(
-        result.query_logits,
+        result.embedding_logits,
         [max(expected_logit(width, text) for width in (20, 40)) for text in ("dog", "puppy", "cat")],
     )
 
@@ -169,7 +198,7 @@ def test_tiling_fills_mini_batches_with_the_views_of_several_images() -> None:
     results: list[ClassificationResult] = classifier.classify_images(IMAGES, PROMPT, tiling)
     assert classifier.mini_batch_sizes == [10, 10, 5]
     for image, result in zip(IMAGES, results, strict=True):
-        np.testing.assert_allclose(result.query_logits, classifier.classify(image, PROMPT, tiling).query_logits)
+        np.testing.assert_allclose(result.embedding_logits, classifier.classify(image, PROMPT, tiling).embedding_logits)
 
 
 def test_classify_embeddings_equals_classify_images_with_tiling() -> None:
@@ -182,7 +211,7 @@ def test_classify_embeddings_equals_classify_images_with_tiling() -> None:
     from_embeddings: list[ClassificationResult] = classifier.classify_embeddings(view_embeddings, PROMPT)
     from_images: list[ClassificationResult] = classifier.classify_images(IMAGES, PROMPT, tiling)
     for embedded, direct in zip(from_embeddings, from_images, strict=True):
-        np.testing.assert_allclose(embedded.query_logits, direct.query_logits)
+        np.testing.assert_allclose(embedded.embedding_logits, direct.embedding_logits)
 
 
 def test_embed_images_concatenates_mini_batches() -> None:
@@ -202,7 +231,7 @@ def test_embed_texts_strips_and_scores_like_prompts() -> None:
     assert classifier.embedded_texts == [["dog", "puppy"]]
     image_embeddings: FloatArray = classifier.embed_images(IMAGES[:1])
     logits: FloatArray = image_embeddings @ text_embeddings.T * classifier.logit_scale + classifier.logit_bias
-    np.testing.assert_allclose(logits[0], classifier.classify(IMAGES[0], PROMPT).query_logits[:2])
+    np.testing.assert_allclose(logits[0], classifier.classify(IMAGES[0], PROMPT).embedding_logits[:2])
     np.testing.assert_allclose(classifier.embed_prompt(PROMPT)[:2], text_embeddings)
 
 
@@ -226,6 +255,18 @@ def test_model_output_shapes_are_checked() -> None:
         classifier.embed_image(IMAGES[0])
     with pytest.raises(RuntimeError, match="embeddings of shape"):
         classifier.embed_texts(["dog"])
+
+
+def test_prompt_is_embedded_once_per_prompt_and_settings() -> None:
+    classifier: StubClassifier = StubClassifier(build_settings())
+    for image in IMAGES:
+        classifier.classify(image, PROMPT)
+    classifier.classify_embeddings(classifier.embed_images(IMAGES), PROMPT)
+    assert classifier.embedded_texts == [["dog", "puppy", "cat"]]
+    assert not classifier.embed_prompt(PROMPT).flags.writeable
+    classifier.settings = replace(build_settings(), text_templates=("a {}",))
+    classifier.classify(IMAGES[0], PROMPT)
+    assert classifier.embedded_texts[-1] == ["a dog", "a puppy", "a cat"]
 
 
 def test_settings_of_another_backend_are_rejected() -> None:
@@ -301,3 +342,28 @@ def test_images_keep_their_size_without_letterbox(classifier_type: type[StubClas
     classifier: StubClassifier = classifier_type(build_settings(image_fit=image_fit))
     classifier.embed_image(Image.new("RGB", (4, 10)))
     assert [image.size for image in classifier.images] == [(4, 10)]
+
+
+def test_per_sentence_templates_are_combined_as_the_settings_say() -> None:
+    sentences: dict[str, float] = {
+        sentence: expected_logit(13, sentence) for sentence in ("dog", "a dog", "puppy", "a puppy")
+    }
+    classifier: StubClassifier = StubClassifier(build_sentence_settings(TemplateCombination.MEAN, LogitCombination.MIN))
+    result: ClassificationResult = classifier.classify(IMAGES[3], PROMPT)
+    assert len(classifier.embedding_layout(PROMPT)) == 6
+    dog_mean: float = (sentences["dog"] + sentences["a dog"]) / 2
+    puppy_mean: float = (sentences["puppy"] + sentences["a puppy"]) / 2
+    assert result.classification(0).logit == pytest.approx(min(dog_mean, puppy_mean))
+    classifier.settings = build_sentence_settings(TemplateCombination.SEPARATE, LogitCombination.MEAN)
+    assert classifier.classify(IMAGES[3], PROMPT).classification(0).logit == pytest.approx(sum(sentences.values()) / 4)
+    best_sentence: str = max(sentences, key=lambda sentence: sentences[sentence])
+    assert classifier.classify(IMAGES[3], PROMPT).classification(0).matched_template == (
+        "{}" if best_sentence in ("dog", "puppy") else "a {}"
+    )
+
+
+def test_ensembled_templates_report_no_template() -> None:
+    classifier: StubClassifier = StubClassifier(replace(build_settings(), text_templates=("{}", "a {}")))
+    result: ClassificationResult = classifier.classify(IMAGES[0], PROMPT)
+    assert len(classifier.embedding_layout(PROMPT)) == 3
+    assert result.classification(0).matched_template is None

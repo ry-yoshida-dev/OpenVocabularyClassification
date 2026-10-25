@@ -13,7 +13,7 @@ loaded.
 
 | Component | Description |
 | --------- | ----------- |
-| [core.py](./core.py) | `ClassifierSettings`: backend, weights, image pooling, image fit, text templates, batch size, device and precision; `from_mapping` and `build()`. |
+| [core.py](./core.py) | `ClassifierSettings`: backend, weights, image pooling, image fit, text templates, template and query combination, batch size, device and precision; `from_mapping` and `build()`. |
 | [presets.py](./presets.py) | `PresetCatalog`: lists and loads packaged presets (`clip/openai_vit_b16`) and preset-format YAML files. |
 | [config_values.py](./config_values.py) | `ConfigValues`: typed, validating access to strings, string lists, integers and enum values of a configuration section. |
 

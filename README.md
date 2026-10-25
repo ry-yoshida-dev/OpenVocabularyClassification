@@ -18,9 +18,19 @@ so that models can be swapped and compared by changing configuration only. Appli
   prompt without running the image tower again.
 - **Classes are separate from queries**: a `Prompt` maps each class name (class id = key order) to its queries, text
   phrases (`TextQuery`), reference images (`VisualQuery`) or both, e.g. `"dog"` by `"dog"`, `"puppy"` and photos of
-  the user's own dog. Each class takes the logit of its best query and reports it as matched.
-- **Prompt ensembling is built in**: every text query is filled into the `text_templates` of the settings (e.g.
-  `"a photo of a {}."`) and the normalized sentence embeddings are averaged.
+  the user's own dog. The highest query of a class is reported as matched.
+- **Templates and queries are combined step by step**: every text query is filled into the `text_templates` of the
+  settings (e.g. `"a photo of a {}."`). Each step is a setting of its own:
+  1. `template_combination`: `ensemble` averages the normalized sentence embeddings of a text query into one (prompt
+     ensembling, the default), `separate` passes every sentence on as a candidate of its own, and `max`, `mean`,
+     `median` or `min` reduce the sentence logits of the query into one.
+  2. `query_combination`: `max` (default), `mean`, `median` or `min` of the candidates of a class.
+
+  The defaults (`ensemble`, `max`) take the best query of each class. `mean` is not the same as `ensemble`: its
+  cosine similarity is that of `ensemble` times the norm of the averaged sentence embedding, which is below 1 and
+  differs per query, so its logits are smaller (a flatter CLIP softmax) and can rank queries differently. A `max` over more
+  candidates is biased upward, so logit thresholds hold for one set of templates and similar numbers of queries per
+  class.
 - **Scores follow the training loss**: CLIP scores are a softmax over the prompt classes (exactly one class is
   assumed), SigLIP scores are independent sigmoids (any number of classes may apply). Raw logits are kept as well, and
   `filter_by_logit` thresholds them independently of the other classes. `to_records` serializes results as JSON.
@@ -49,8 +59,10 @@ the architecture, so `weights_path` alone decides between them.
 Images are processed in mini-batches, and `iter_classify_images` / `iter_embed_images` read a stream of images one
 mini-batch at a time, so datasets of any size run in bounded memory; images with transparency are composited over
 white, and 16-bit, 32-bit and float single-channel images are stretched from their lowest to their highest value.
-Query embeddings are cached per text query (the most recently used 4096) and per visual reference, so prompts
-that share queries do not recompute them; the caches are thread-safe. Models run in `float32`, `float16` (GPU) or
+Query embeddings are cached per sentence (the most recently used 16384) and per visual reference, so prompts,
+templates and template embeddings that share sentences do not recompute them; the embeddings and vectorized logit
+aggregation of the last 8 prompts are kept per prompt and settings, so classifying image after image with one prompt
+embeds it once. The caches are thread-safe. Models run in `float32`, `float16` (GPU) or
 `bfloat16`; the learned logit scale and bias are always read in `float32`. Weights are downloaded on first use.
 
 For module details, see [src/open_vocabulary_classification/README.md](src/open_vocabulary_classification/README.md).
@@ -123,6 +135,23 @@ classifier = ClassifierSettings(
 
 embeddings = classifier.embed_images(images)
 similarities = embeddings @ embeddings.T
+```
+
+Every sentence scored on its own, the mean over the templates of a phrase, and a class that only scores high when
+every phrase matches; `classification.matched_template` tells which template of the matched phrase scored highest:
+
+```python
+from dataclasses import replace
+
+from open_vocabulary_classification import LogitCombination, TemplateCombination
+
+classifier.settings = replace(
+    classifier.settings,
+    template_combination=TemplateCombination.MEAN,
+    query_combination=LogitCombination.MIN,
+)
+top = classifier.classify(image, Prompt.from_texts({"dog": ("dog", "puppy"), "cat": ("cat",)})).top
+print(top.class_name, top.matched_query, top.matched_template)
 ```
 
 Several phrases and reference images for one class: the class is reported as `"dog"`, and

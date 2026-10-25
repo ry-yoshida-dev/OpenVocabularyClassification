@@ -8,7 +8,15 @@ from typing import ClassVar, TextIO
 
 from ..classifier import OpenVocabularyClassifier
 from ..image_tiling import ImageTiling
-from ..options import ClassifierBackend, Device, ImageFit, ImagePooling, Precision
+from ..options import (
+    ClassifierBackend,
+    Device,
+    ImageFit,
+    ImagePooling,
+    LogitCombination,
+    Precision,
+    TemplateCombination,
+)
 from ..prompt import Prompt, PromptQuery, TextQuery, VisualQuery, VisualReference
 from ..result import Classification, ClassificationRecord
 from ..settings import ClassifierSettings, PresetCatalog
@@ -23,12 +31,12 @@ class ClassifyCommand:
 
     Settings come from a packaged preset (``--preset clip/openai_vit_b16``), a YAML file in the preset format
     (``--config``) or a backend and weights (``--backend``, ``--weights``); ``--pooling``, ``--image-fit``,
-    ``--templates``, ``--batch-size``, ``--device`` and ``--precision`` override them. A class written as
-    ``name:query,query`` (e.g. ``dog:dog,puppy``) is queried by each query and reported as ``name``; a query
-    ``@path`` is a visual query whose references are the image file or the images of the directory at ``path`` (e.g.
-    ``mug:@refs/mug``). A class given more than once collects the queries of every argument. Images are read one
-    mini-batch at a time, upright as their EXIF orientation says; files that cannot be decoded are reported on the
-    error stream and skipped. Invalid arguments are reported before the model is loaded.
+    ``--templates``, ``--template-combination``, ``--query-combination``, ``--batch-size``, ``--device`` and
+    ``--precision`` override them. A class written as ``name:query,query`` (e.g. ``dog:dog,puppy``) is queried by each
+    query and reported as ``name``; a query ``@path`` is a visual query whose references are the image file or the
+    images of the directory at ``path`` (e.g. ``mug:@refs/mug``). A class given more than once collects the queries of
+    every argument. Images are read one mini-batch at a time, upright as their EXIF orientation says; files that cannot
+    be decoded are reported on the error stream and skipped. Invalid arguments are reported before the model is loaded.
 
     Installed as the ``open-vocabulary-classify`` script.
     """
@@ -172,6 +180,18 @@ class ClassifyCommand:
             "--image-fit", type=ImageFit, choices=list(ImageFit), help="letterbox keeps the whole image (default)"
         )
         parser.add_argument("--templates", nargs="+", help="text templates with one {} each")
+        parser.add_argument(
+            "--template-combination",
+            type=TemplateCombination,
+            choices=list(TemplateCombination),
+            help="ensemble the sentence embeddings of a text query, keep them separate or reduce their logits",
+        )
+        parser.add_argument(
+            "--query-combination",
+            type=LogitCombination,
+            choices=list(LogitCombination),
+            help="combine the query logits of a class",
+        )
         parser.add_argument("--batch-size", type=int)
         parser.add_argument("--device", type=Device, choices=list(Device))
         parser.add_argument("--precision", type=Precision, choices=list(Precision))
@@ -212,6 +232,12 @@ class ClassifyCommand:
             image_pooling=base.image_pooling if namespace.pooling is None else namespace.pooling,
             image_fit=base.image_fit if namespace.image_fit is None else namespace.image_fit,
             text_templates=base.text_templates if namespace.templates is None else tuple(namespace.templates),
+            template_combination=(
+                base.template_combination if namespace.template_combination is None else namespace.template_combination
+            ),
+            query_combination=(
+                base.query_combination if namespace.query_combination is None else namespace.query_combination
+            ),
             batch_size=base.batch_size if namespace.batch_size is None else namespace.batch_size,
             device=base.device if namespace.device is None else namespace.device,
             precision=base.precision if namespace.precision is None else namespace.precision,

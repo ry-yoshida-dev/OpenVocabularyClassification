@@ -11,9 +11,11 @@ from open_vocabulary_classification import (
     Device,
     ImageFit,
     ImagePooling,
+    LogitCombination,
     Precision,
     PresetCatalog,
     ScoreActivation,
+    TemplateCombination,
     TextTemplates,
 )
 
@@ -155,3 +157,22 @@ def test_default_template_uses_the_bare_query() -> None:
         backend=ClassifierBackend.SIGLIP, weights_path="siglip", image_pooling=ImagePooling.ATTENTION
     )
     assert TextTemplates(settings.text_templates).fill("dog") == ("dog",)
+
+
+def test_combinations_are_read_by_value() -> None:
+    values: dict[str, object] = {
+        "backend": "siglip",
+        "weights_path": "siglip",
+        "image_pooling": "attention",
+        "template_combination": "separate",
+        "query_combination": "median",
+    }
+    settings: ClassifierSettings = ClassifierSettings.from_mapping(values)
+    assert settings.template_combination is TemplateCombination.SEPARATE
+    assert settings.query_combination is LogitCombination.MEDIAN
+    defaults: ClassifierSettings = ClassifierSettings.from_mapping(
+        {"backend": "siglip", "weights_path": "siglip", "image_pooling": "attention"}
+    )
+    assert defaults.template_combination is TemplateCombination.ENSEMBLE
+    with pytest.raises(ValueError, match="template_combination must be one of"):
+        ClassifierSettings.from_mapping({**values, "template_combination": "sum"})

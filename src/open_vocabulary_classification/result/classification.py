@@ -18,9 +18,12 @@ class Classification:
     score : float
         Score in ``[0, 1]``: a share of the prompt classes for CLIP, an independent probability for SigLIP.
     logit : float
-        Logit of the best query of the class, comparable across prompts of the same classifier.
+        Logit combined from the queries of the class, comparable across prompts of the same classifier.
     matched_query : PromptQuery
         Query of the class that scored highest, e.g. ``TextQuery("puppy")`` for class ``"dog"``.
+    matched_template : str | None
+        Template of the highest sentence of ``matched_query``, e.g. ``"a photo of a {}."``; ``None`` when the
+        sentences were ensembled into one embedding or the query is visual.
     """
 
     class_id: int
@@ -28,6 +31,7 @@ class Classification:
     score: float
     logit: float
     matched_query: PromptQuery
+    matched_template: str | None
 
     def to_record(self) -> ClassificationRecord:
         """
@@ -53,4 +57,5 @@ class Classification:
             matched_query_kind=self.matched_query.kind.value,
             matched_query_text=matched_query_text,
             matched_query_reference_count=matched_query_reference_count,
+            matched_template=self.matched_template,
         )

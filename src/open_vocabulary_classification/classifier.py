@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from functools import lru_cache
 from itertools import batched
 from typing import ClassVar
 
@@ -11,8 +12,9 @@ from .array_types import FloatArray
 from .image_tiling import ImageTiling
 from .letterbox import Letterbox
 from .options import ClassifierBackend, ImageFit, ImagePooling, ScoreActivation
-from .prompt import Prompt, TextQuery
-from .result import ClassificationResult
+from .prepared_prompt import PreparedPrompt
+from .prompt import EmbeddingLayout, Prompt, TextQuery, TextTemplates
+from .result import ClassificationResult, LogitAggregation
 from .settings import ClassifierSettings
 
 
@@ -20,12 +22,18 @@ class OpenVocabularyClassifier(ABC):
     """
     Common base of every open-vocabulary image classifier, independent of the inference runtime.
 
-    Images and queries are embedded into one joint space; the logit of an image and a query is the cosine similarity
-    of their L2-normalized embeddings times ``logit_scale`` plus ``logit_bias``. Each class takes the logit of its best
-    query and the activation of ``BACKEND`` scores the classes. Subclasses embed images, text queries and prompts and
-    expose the scale and bias of their model; how the model runs (PyTorch, ONNX Runtime, TensorRT, ...) is up to each
+    Images and queries are embedded into one joint space; the logit of an image and an embedding is the cosine
+    similarity of their L2-normalized embeddings times ``logit_scale`` plus ``logit_bias``. A text query has one
+    embedding ensembling its template sentences or one per sentence, and the logits of a class are combined, as
+    ``settings.template_combination`` and ``settings.query_combination`` say; the activation of ``BACKEND`` scores the
+    classes. Subclasses embed images, text queries and prompt layouts and expose the scale and
+    bias of their model; how the model runs (PyTorch, ONNX Runtime, TensorRT, ...) is up to each
     subclass and its runtime. Everything else, mini-batching, RGB conversion, tiling, scoring and shape checks, is
     shared here.
+
+    The embeddings and logit aggregation of the ``PROMPT_CACHE_CAPACITY`` prompts used last are kept per prompt and
+    settings, so classifying image after image with one prompt embeds it once and scores each image with a few
+    vectorized operations; replacing ``settings`` prepares the prompt again.
 
     Images of any mode are converted to RGB; transparent pixels are composited over ``TRANSPARENCY_BACKGROUND``
     (white) instead of keeping the color hidden under them, and single-channel images of more than 8 bits (16-bit,
@@ -51,6 +59,7 @@ class OpenVocabularyClassifier(ABC):
     HIGH_BIT_DEPTH_MODES: ClassVar[frozenset[str]] = frozenset({"I", "I;16", "I;16B", "I;16L", "I;16N", "F"})
     MAX_CHANNEL_VALUE: ClassVar[float] = 255.0
     IS_ASPECT_RATIO_KEPT: ClassVar[bool] = False
+    PROMPT_CACHE_CAPACITY: ClassVar[int] = 8
 
     def __init__(self, settings: ClassifierSettings) -> None:
         """
@@ -67,6 +76,9 @@ class OpenVocabularyClassifier(ABC):
         if settings.backend is not self.BACKEND:
             raise ValueError(f"{type(self).__name__} needs {self.BACKEND} settings. got {settings.backend}")
         self.settings: ClassifierSettings = settings
+        self._prepared_prompts: Callable[[Prompt, ClassifierSettings], PreparedPrompt] = lru_cache(
+            maxsize=self.PROMPT_CACHE_CAPACITY
+        )(self._prepare_prompt)
 
     @property
     def batch_size(self) -> int:
@@ -173,19 +185,19 @@ class OpenVocabularyClassifier(ABC):
         """
 
     @abstractmethod
-    def _embed_prompt(self, prompt: Prompt) -> FloatArray:
+    def _embed_layout(self, layout: EmbeddingLayout) -> FloatArray:
         """
-        Embed every query of a prompt.
+        Embed every entry of a prompt layout.
 
         Parameters
         ----------
-        prompt : Prompt
-            Prompt with text queries, visual queries or both.
+        layout : EmbeddingLayout
+            Embeddings of a prompt with text queries, visual queries or both.
 
         Returns
         -------
         FloatArray
-            L2-normalized query embeddings in query-id order, shape (Q, D).
+            L2-normalized embeddings in embedding-id order, shape (E, D).
         """
 
     def classify(self, image: Image.Image, prompt: Prompt, tiling: ImageTiling | None = None) -> ClassificationResult:
@@ -268,10 +280,10 @@ class OpenVocabularyClassifier(ABC):
         RuntimeError
             If the model does not return one embedding per image or query.
         """
-        query_embeddings: FloatArray = self.embed_prompt(prompt)
+        prepared_prompt: PreparedPrompt = self._prepared_prompts(prompt, self.settings)
         for image_embeddings in self._iter_embedding_batches(images, tiling):
-            for query_logits in self._logits(image_embeddings, query_embeddings):
-                yield self._result(query_logits, prompt)
+            for embedding_logits in self._logits(image_embeddings, prepared_prompt.embeddings):
+                yield self._result(embedding_logits, prepared_prompt.aggregation)
 
     def classify_embeddings(self, image_embeddings: FloatArray, prompt: Prompt) -> list[ClassificationResult]:
         """
@@ -279,7 +291,8 @@ class OpenVocabularyClassifier(ABC):
 
         Embedding a dataset once and classifying it with many prompts, thresholds or class sets costs one pass of the
         image tower in total. The embeddings must come from a classifier with the same weights and pooling. View
-        embeddings of a tiling, shape (N, V, D), keep the highest logit of each query over the views of an image.
+        embeddings of a tiling, shape (N, V, D), keep the highest logit of each prompt embedding over the views of an
+        image.
 
         Parameters
         ----------
@@ -307,12 +320,16 @@ class OpenVocabularyClassifier(ABC):
             raise ValueError("image_embeddings must be finite.")
         if not np.allclose(np.linalg.norm(image_embeddings, axis=-1), 1.0, atol=self.UNIT_NORM_TOLERANCE):
             raise ValueError("image_embeddings must be L2-normalized, as embed_images returns them.")
-        query_embeddings: FloatArray = self.embed_prompt(prompt)
-        if image_embeddings.shape[-1] != query_embeddings.shape[1]:
+        prepared_prompt: PreparedPrompt = self._prepared_prompts(prompt, self.settings)
+        prompt_embeddings: FloatArray = prepared_prompt.embeddings
+        if image_embeddings.shape[-1] != prompt_embeddings.shape[1]:
             raise ValueError(
-                f"image_embeddings must have dimension {query_embeddings.shape[1]}. got {image_embeddings.shape[-1]}"
+                f"image_embeddings must have dimension {prompt_embeddings.shape[1]}. got {image_embeddings.shape[-1]}"
             )
-        return [self._result(query_logits, prompt) for query_logits in self._logits(image_embeddings, query_embeddings)]
+        return [
+            self._result(embedding_logits, prepared_prompt.aggregation)
+            for embedding_logits in self._logits(image_embeddings, prompt_embeddings)
+        ]
 
     def embed_image(self, image: Image.Image, tiling: ImageTiling | None = None) -> FloatArray:
         """
@@ -396,9 +413,9 @@ class OpenVocabularyClassifier(ABC):
         """
         Embed text queries into the joint image-text space, e.g. to search images by text.
 
-        Every text is filled into the text templates and ensembled exactly as a ``TextQuery`` of a prompt, so
-        ``embed_images(images) @ embed_texts(texts).T`` are the cosine similarities a classifier scores. Embeddings are
-        cached per text.
+        Every text is filled into the text templates and the sentences are ensembled, as a ``TextQuery`` of a prompt is
+        with ``TemplateCombination.ENSEMBLE``, so ``embed_images(images) @ embed_texts(texts).T`` are the cosine
+        similarities a classifier scores then. Embeddings are cached per sentence.
 
         Parameters
         ----------
@@ -422,9 +439,25 @@ class OpenVocabularyClassifier(ABC):
         stripped_texts: list[str] = [TextQuery(text).text for text in texts]
         return self._checked_embeddings(self._embed_texts(stripped_texts), len(stripped_texts))
 
+    def embedding_layout(self, prompt: Prompt) -> EmbeddingLayout:
+        """
+        Lay out the embeddings of a prompt as ``settings.text_templates`` and ``settings.template_combination`` say.
+
+        Parameters
+        ----------
+        prompt : Prompt
+            Prompt with text queries, visual queries or both.
+
+        Returns
+        -------
+        EmbeddingLayout
+            Embeddings of every query in query-id order.
+        """
+        return self._embedding_layout(prompt, self.settings)
+
     def embed_prompt(self, prompt: Prompt) -> FloatArray:
         """
-        Embed every query of a prompt, text queries through the templates and visual queries as reference averages.
+        Embed a prompt, text queries through the templates and visual queries as reference averages.
 
         Parameters
         ----------
@@ -434,14 +467,15 @@ class OpenVocabularyClassifier(ABC):
         Returns
         -------
         FloatArray
-            L2-normalized query embeddings in query-id order, shape (Q, D).
+            Read-only L2-normalized embeddings in the embedding-id order of ``embedding_layout(prompt)``, shape
+            (E, D); cached, so embedding the prompt again returns the same array.
 
         Raises
         ------
         RuntimeError
-            If the model does not return one embedding per query.
+            If the model does not return one embedding per entry of the layout.
         """
-        return self._checked_embeddings(self._embed_prompt(prompt), len(prompt.queries))
+        return self._prepared_prompts(prompt, self.settings).embeddings
 
     def _iter_embedding_batches(
         self, images: Iterable[Image.Image], tiling: ImageTiling | None
@@ -461,6 +495,19 @@ class OpenVocabularyClassifier(ABC):
                     )
                     yield view_embeddings.reshape(len(image_batch), tiling.view_count, -1)
 
+    def _prepare_prompt(self, prompt: Prompt, settings: ClassifierSettings) -> PreparedPrompt:
+        layout: EmbeddingLayout = self._embedding_layout(prompt, settings)
+        embeddings: FloatArray = self._checked_embeddings(self._embed_layout(layout), len(layout))
+        embeddings.setflags(write=False)
+        return PreparedPrompt(
+            aggregation=LogitAggregation(
+                layout=layout,
+                template_combination=settings.template_combination,
+                query_combination=settings.query_combination,
+            ),
+            embeddings=embeddings,
+        )
+
     def _embed_checked(self, images: Sequence[Image.Image]) -> FloatArray:
         return self._checked_embeddings(
             self._embed_mini_batch([self._prepare_image(image) for image in images]), len(images)
@@ -474,12 +521,18 @@ class OpenVocabularyClassifier(ABC):
             case ImageFit.LETTERBOX | ImageFit.NATIVE:
                 return rgb_image
 
-    def _logits(self, image_embeddings: FloatArray, query_embeddings: FloatArray) -> FloatArray:
-        logits: FloatArray = image_embeddings @ query_embeddings.T * self.logit_scale + self.logit_bias
+    def _logits(self, image_embeddings: FloatArray, prompt_embeddings: FloatArray) -> FloatArray:
+        logits: FloatArray = image_embeddings @ prompt_embeddings.T * self.logit_scale + self.logit_bias
         return logits if logits.ndim == 2 else logits.max(axis=1)
 
-    def _result(self, query_logits: FloatArray, prompt: Prompt) -> ClassificationResult:
-        return ClassificationResult(prompt=prompt, query_logits=query_logits, score_activation=self.score_activation)
+    def _result(self, embedding_logits: FloatArray, aggregation: LogitAggregation) -> ClassificationResult:
+        return ClassificationResult(
+            aggregation=aggregation, embedding_logits=embedding_logits, score_activation=self.score_activation
+        )
+
+    @staticmethod
+    def _embedding_layout(prompt: Prompt, settings: ClassifierSettings) -> EmbeddingLayout:
+        return EmbeddingLayout.of(prompt, TextTemplates(settings.text_templates), settings.template_combination)
 
     @staticmethod
     def _checked_embeddings(embeddings: FloatArray, expected_count: int) -> FloatArray:

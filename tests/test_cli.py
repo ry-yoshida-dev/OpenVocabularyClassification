@@ -123,6 +123,33 @@ def test_json_lines_output(checkpoint_directory: Path, image_directory: Path) ->
     assert len(classifications) == 1
 
 
+def test_template_and_query_combinations(checkpoint_directory: Path, image_directory: Path) -> None:
+    output: str = run(
+        [
+            str(image_directory / "b.png"),
+            "--weights",
+            str(checkpoint_directory / "siglip"),
+            "--backend",
+            "siglip",
+            "--device",
+            "cpu",
+            "--templates",
+            "{}",
+            "a {}",
+            "--template-combination",
+            "separate",
+            "--query-combination",
+            "mean",
+            "--classes",
+            "dog:dog,puppy",
+            "--format",
+            "jsonl",
+        ]
+    )
+    records: list[dict[str, object]] = json.loads(output)["classifications"]
+    assert records[0]["matched_template"] in ("{}", "a {}")
+
+
 def test_text_output_with_overrides(checkpoint_directory: Path, image_directory: Path) -> None:
     output: str = run(
         [

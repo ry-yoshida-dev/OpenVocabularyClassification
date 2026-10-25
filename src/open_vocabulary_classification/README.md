@@ -10,13 +10,14 @@ presets of every supported model, and the backends implementing the interface.
 | Component | Description |
 | --------- | ----------- |
 | [classifier.py](./classifier.py) | `OpenVocabularyClassifier`: runtime-independent base classifying images (eagerly, streamed or tiled) and precomputed embeddings, embedding images, texts and prompts, with mini-batching, RGB conversion over a white background (stretching high-bit-depth images), letterboxing, tiled views batched across images, and shared scoring. |
+| [prepared_prompt.py](./prepared_prompt.py) | `PreparedPrompt`: embeddings and logit aggregation of a prompt, cached by the classifier per prompt and settings. |
 | [letterbox.py](./letterbox.py) | `Letterbox`: pads images to a centered square so square model inputs show the whole image undistorted. |
 | [image_tiling.py](./image_tiling.py) | `ImageTiling`: overlapping tile grid, plus the whole image, classified view by view so small objects are found. |
 | [settings/](./settings/README.md) | `ClassifierSettings` with `from_mapping` and `build()`, and `PresetCatalog` loading packaged presets and YAML files. |
 | [options/](./options/README.md) | `ClassifierBackend`, `ImagePooling`, `ImageFit`, `ScoreActivation`, `Device` and `Precision`: options composing `ClassifierSettings`. |
 | [prompt/](./prompt/README.md) | `Prompt` mapping each class name to its text and visual queries, the query types, `TextTemplates` and `VisualReference`. |
-| [result/](./result/README.md) | `ClassificationResult`, `Classification` and its JSON-serializable `ClassificationRecord`. |
-| [cache/](./cache/README.md) | Thread-safe query embeddings cached per text query and per visual reference. |
+| [result/](./result/README.md) | `ClassificationResult`, `Classification`, its JSON-serializable `ClassificationRecord` and the vectorized `LogitAggregation`. |
+| [cache/](./cache/README.md) | Thread-safe prompt embeddings cached per sentence and per visual reference. |
 | [runtime/](./runtime/README.md) | `TorchRuntime`: device, precision, model preparation and input transfer for PyTorch-backed classifiers. |
 | [backends/](./backends/README.md) | CLIP-family (CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2, DFN CLIP) and SigLIP-family (SigLIP, SigLIP 2, SigLIP 2 NaFlex) classifiers. |
 | [config/](./config/README.md) | YAML presets of every backend, loaded by `PresetCatalog`. |

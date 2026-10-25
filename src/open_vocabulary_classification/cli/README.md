@@ -27,5 +27,7 @@ open-vocabulary-classify images/ --recursive --preset siglip/v2_so400m_patch14_3
 open-vocabulary-classify large_photo.jpg --weights google/siglip2-base-patch16-naflex --backend siglip \
     --tile-grid 3 --classes "small bird" "airplane"
 open-vocabulary-classify images/ --preset clip/openai_vit_b16 --image-fit native --classes cat dog
+open-vocabulary-classify images/ --preset clip/openai_vit_b16 --templates "a photo of a {}." "a drawing of a {}." \
+    --template-combination separate --query-combination mean --classes "dog:dog,puppy" cat
 open-vocabulary-classify shelf/ --preset siglip/v2_base_patch16_224 --classes "my mug:mug,@refs/my_mug/" cup
 ```

@@ -5,7 +5,15 @@ from collections.abc import Sequence
 import torch
 from PIL import Image
 
-from open_vocabulary_classification import Prompt, TextQuery, TextTemplates, VisualQuery, VisualReference
+from open_vocabulary_classification import (
+    EmbeddingLayout,
+    Prompt,
+    TemplateCombination,
+    TextQuery,
+    TextTemplates,
+    VisualQuery,
+    VisualReference,
+)
 from open_vocabulary_classification.cache import QueryEmbeddingStore
 
 SENTENCE_EMBEDDINGS: dict[str, list[float]] = {
@@ -31,17 +39,26 @@ class CountingEmbedder:
         return torch.tensor([[float(reference.image.width), float(reference.image.height)] for reference in references])
 
 
-def build_store(
-    templates: tuple[str, ...] = ("{}",), text_cache_capacity: int = 16
-) -> tuple[QueryEmbeddingStore, CountingEmbedder]:
+PLAIN_TEMPLATES: TextTemplates = TextTemplates(("{}",))
+ARTICLE_TEMPLATES: TextTemplates = TextTemplates(("{}", "a {}"))
+
+
+def build_store(sentence_cache_capacity: int = 16) -> tuple[QueryEmbeddingStore, CountingEmbedder]:
     embedder: CountingEmbedder = CountingEmbedder()
     store: QueryEmbeddingStore = QueryEmbeddingStore(
         embed_sentences=embedder.embed_sentences,
         embed_references=embedder.embed_references,
-        text_templates=TextTemplates(templates),
-        text_cache_capacity=text_cache_capacity,
+        sentence_cache_capacity=sentence_cache_capacity,
     )
     return store, embedder
+
+
+def layout_of(
+    prompt: Prompt,
+    templates: TextTemplates = PLAIN_TEMPLATES,
+    template_combination: TemplateCombination = TemplateCombination.ENSEMBLE,
+) -> EmbeddingLayout:
+    return EmbeddingLayout.of(prompt, templates, template_combination)
 
 
 def build_reference(width: int, height: int) -> VisualReference:
@@ -51,18 +68,18 @@ def build_reference(width: int, height: int) -> VisualReference:
 def test_text_queries_are_normalized_and_embedded_once_across_prompts() -> None:
     store, embedder = build_store()
     torch.testing.assert_close(
-        store.embed(Prompt.from_class_names(("cat", "dog"))), torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+        store.embed(layout_of(Prompt.from_class_names(("cat", "dog")))), torch.tensor([[1.0, 0.0], [0.0, 1.0]])
     )
-    store.embed(Prompt.from_texts({"pet": ("dog", "bird")}))
-    store.embed(Prompt.from_class_names(("cat", "dog")))
+    store.embed(layout_of(Prompt.from_texts({"pet": ("dog", "bird")})))
+    store.embed(layout_of(Prompt.from_class_names(("cat", "dog"))))
     assert embedder.embedded_sentences == [["cat", "dog"], ["bird"]]
 
 
 def test_templates_are_ensembled_per_text_query() -> None:
-    store, embedder = build_store(("{}", "a {}"))
+    store, embedder = build_store()
     half_sqrt: float = 0.5**0.5
     torch.testing.assert_close(
-        store.embed(Prompt.from_class_names(("cat", "dog"))),
+        store.embed(layout_of(Prompt.from_class_names(("cat", "dog")), ARTICLE_TEMPLATES)),
         torch.tensor([[half_sqrt, half_sqrt], [half_sqrt, half_sqrt]]),
     )
     assert embedder.embedded_sentences == [["cat", "a cat", "dog", "a dog"]]
@@ -73,14 +90,14 @@ def test_visual_query_averages_its_normalized_references() -> None:
     references: tuple[VisualReference, ...] = (build_reference(3, 4), build_reference(4, 3))
     half_sqrt: float = 0.5**0.5
     prompt: Prompt = Prompt({"my mug": (VisualQuery(references),)})
-    torch.testing.assert_close(store.embed(prompt), torch.tensor([[half_sqrt, half_sqrt]]))
-    store.embed(Prompt({"cup": (VisualQuery((references[1],)),)}))
+    torch.testing.assert_close(store.embed(layout_of(prompt)), torch.tensor([[half_sqrt, half_sqrt]]))
+    store.embed(layout_of(Prompt({"cup": (VisualQuery((references[1],)),)})))
     assert embedder.embedded_references == list(references)
 
 
 def test_unused_references_are_released() -> None:
     store, embedder = build_store()
-    store.embed(Prompt({"my mug": (VisualQuery((build_reference(5, 5),)),)}))
+    store.embed(layout_of(Prompt({"my mug": (VisualQuery((build_reference(5, 5),)),)})))
     embedder.embedded_references.clear()
     gc.collect()
     assert len(store._references.entries) == 0
@@ -96,24 +113,24 @@ def test_text_and_visual_queries_keep_query_order() -> None:
     )
     half_sqrt: float = 0.5**0.5
     torch.testing.assert_close(
-        store.embed(prompt), torch.tensor([[1.0, 0.0], [0.8, 0.6], [0.0, 1.0], [half_sqrt, half_sqrt]])
+        store.embed(layout_of(prompt)), torch.tensor([[1.0, 0.0], [0.8, 0.6], [0.0, 1.0], [half_sqrt, half_sqrt]])
     )
     assert embedder.embedded_sentences == [["cat", "dog", "bird"]]
 
 
-def test_least_recently_used_text_queries_are_evicted() -> None:
-    store, embedder = build_store(text_cache_capacity=2)
-    store.embed(Prompt.from_class_names(("cat", "dog")))
-    store.embed(Prompt.from_class_names(("cat",)))
-    store.embed(Prompt.from_class_names(("bird",)))
-    store.embed(Prompt.from_class_names(("cat", "dog")))
+def test_least_recently_used_sentences_are_evicted() -> None:
+    store, embedder = build_store(sentence_cache_capacity=2)
+    store.embed(layout_of(Prompt.from_class_names(("cat", "dog"))))
+    store.embed(layout_of(Prompt.from_class_names(("cat",))))
+    store.embed(layout_of(Prompt.from_class_names(("bird",))))
+    store.embed(layout_of(Prompt.from_class_names(("cat", "dog"))))
     assert embedder.embedded_sentences == [["cat", "dog"], ["bird"], ["dog"]]
 
 
-def test_prompt_larger_than_the_text_cache_is_embedded() -> None:
-    store, embedder = build_store(text_cache_capacity=1)
+def test_prompt_larger_than_the_sentence_cache_is_embedded() -> None:
+    store, embedder = build_store(sentence_cache_capacity=1)
     torch.testing.assert_close(
-        store.embed(Prompt.from_class_names(("cat", "dog", "bird"))),
+        store.embed(layout_of(Prompt.from_class_names(("cat", "dog", "bird")))),
         torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.5**0.5, 0.5**0.5]]),
     )
     assert embedder.embedded_sentences == [["cat", "dog", "bird"]]
@@ -122,19 +139,19 @@ def test_prompt_larger_than_the_text_cache_is_embedded() -> None:
 def test_embed_texts_shares_the_cache_with_prompts() -> None:
     store, embedder = build_store()
     torch.testing.assert_close(
-        store.embed_texts(["dog", "cat", "dog"]), torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+        store.embed_texts(["dog", "cat", "dog"], PLAIN_TEMPLATES), torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
     )
-    store.embed(Prompt.from_class_names(("cat", "dog", "bird")))
+    store.embed(layout_of(Prompt.from_class_names(("cat", "dog", "bird"))))
     assert embedder.embedded_sentences == [["dog", "cat"], ["bird"]]
 
 
-def test_concurrent_prompts_embed_each_text_once() -> None:
+def test_concurrent_prompts_embed_each_sentence_once() -> None:
     store, embedder = build_store()
     barrier: threading.Barrier = threading.Barrier(8)
 
     def embed() -> None:
         barrier.wait()
-        store.embed(Prompt.from_class_names(("cat", "dog", "bird")))
+        store.embed(layout_of(Prompt.from_class_names(("cat", "dog", "bird"))))
 
     threads: list[threading.Thread] = [threading.Thread(target=embed) for _ in range(8)]
     for thread in threads:
@@ -142,3 +159,22 @@ def test_concurrent_prompts_embed_each_text_once() -> None:
     for thread in threads:
         thread.join()
     assert embedder.embedded_sentences == [["cat", "dog", "bird"]]
+
+
+def test_per_sentence_keeps_one_embedding_per_template() -> None:
+    store, _ = build_store()
+    layout: EmbeddingLayout = layout_of(
+        Prompt.from_class_names(("cat", "dog")), ARTICLE_TEMPLATES, TemplateCombination.SEPARATE
+    )
+    torch.testing.assert_close(store.embed(layout), torch.tensor([[1.0, 0.0], [0.0, 1.0], [0.0, 1.0], [1.0, 0.0]]))
+    assert [entry.template for entry in layout.entries] == ["{}", "a {}", "{}", "a {}"]
+    assert layout.entry_query_ids.tolist() == [0, 0, 1, 1]
+
+
+def test_sentences_are_shared_between_template_combinations() -> None:
+    store, embedder = build_store()
+    prompt: Prompt = Prompt.from_class_names(("cat",))
+    store.embed(layout_of(prompt, ARTICLE_TEMPLATES, TemplateCombination.SEPARATE))
+    store.embed(layout_of(prompt, ARTICLE_TEMPLATES))
+    store.embed_texts(["cat"], ARTICLE_TEMPLATES)
+    assert embedder.embedded_sentences == [["cat", "a cat"]]

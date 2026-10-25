@@ -1,9 +1,28 @@
 from .classifier import OpenVocabularyClassifier
 from .image_tiling import ImageTiling
 from .letterbox import Letterbox
-from .options import ClassifierBackend, Device, ImageFit, ImagePooling, Precision, ScoreActivation
-from .prompt import Prompt, PromptKind, PromptQuery, TextQuery, TextTemplates, VisualQuery, VisualReference
-from .result import Classification, ClassificationRecord, ClassificationResult
+from .options import (
+    ClassifierBackend,
+    Device,
+    ImageFit,
+    ImagePooling,
+    LogitCombination,
+    Precision,
+    ScoreActivation,
+    TemplateCombination,
+)
+from .prompt import (
+    EmbeddingEntry,
+    EmbeddingLayout,
+    Prompt,
+    PromptKind,
+    PromptQuery,
+    TextQuery,
+    TextTemplates,
+    VisualQuery,
+    VisualReference,
+)
+from .result import Classification, ClassificationRecord, ClassificationResult, LogitAggregation
 from .settings import ClassifierSettings, PresetCatalog
 
 __all__ = [
@@ -13,10 +32,14 @@ __all__ = [
     "ClassifierBackend",
     "ClassifierSettings",
     "Device",
+    "EmbeddingEntry",
+    "EmbeddingLayout",
     "ImageFit",
     "ImagePooling",
     "ImageTiling",
     "Letterbox",
+    "LogitAggregation",
+    "LogitCombination",
     "OpenVocabularyClassifier",
     "Precision",
     "PresetCatalog",
@@ -24,6 +47,7 @@ __all__ = [
     "PromptKind",
     "PromptQuery",
     "ScoreActivation",
+    "TemplateCombination",
     "TextQuery",
     "TextTemplates",
     "VisualQuery",

@@ -1,9 +1,15 @@
+from .class_logits import ClassLogits
 from .classification import Classification
 from .classification_record import ClassificationRecord
 from .classification_result import ClassificationResult
+from .logit_aggregation import LogitAggregation
+from .logit_segments import LogitSegments
 
 __all__ = [
+    "ClassLogits",
     "Classification",
     "ClassificationRecord",
     "ClassificationResult",
+    "LogitAggregation",
+    "LogitSegments",
 ]

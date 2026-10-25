@@ -91,7 +91,7 @@ def test_image_embeddings_match_transformers(classifier: OpenVocabularyClassifie
 def test_logits_match_transformers(classifier: OpenVocabularyClassifier, weights_path: str) -> None:
     results: list[ClassificationResult] = classifier.classify_images(IMAGES, Prompt.from_class_names(CLASS_NAMES))
     np.testing.assert_allclose(
-        np.stack([result.query_logits for result in results]), reference_logits(weights_path), atol=1e-3
+        np.stack([result.embedding_logits for result in results]), reference_logits(weights_path), atol=1e-3
     )
 
 

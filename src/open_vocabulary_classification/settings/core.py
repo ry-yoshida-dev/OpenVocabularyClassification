@@ -2,7 +2,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
 
-from ..options import ClassifierBackend, Device, ImageFit, ImagePooling, Precision
+from ..options import (
+    ClassifierBackend,
+    Device,
+    ImageFit,
+    ImagePooling,
+    LogitCombination,
+    Precision,
+    TemplateCombination,
+)
 from ..prompt import TextTemplates
 from .config_values import ConfigValues
 
@@ -29,7 +37,15 @@ class ClassifierSettings:
     image_fit : ImageFit
         How images of any aspect ratio are fitted into the model input; ``LETTERBOX`` keeps the whole image.
     text_templates : tuple[str, ...]
-        Templates with one ``{}`` each, filled with every text query and ensembled; ``("{}",)`` uses the bare query.
+        Templates with one ``{}`` each, filled with every text query; ``("{}",)`` uses the bare query.
+    template_combination : TemplateCombination
+        How the sentences of a text query are combined: ``ENSEMBLE`` averages their embeddings into one, ``SEPARATE``
+        keeps every sentence as a candidate of its class, ``MAX``, ``MEAN``, ``MEDIAN`` and ``MIN`` reduce their
+        logits into the query logit. The cosine similarity of ``MEAN`` is that of ``ENSEMBLE`` times the norm of the
+        averaged sentence embedding, which is below 1 and differs per query, so ``MEAN`` logits are smaller and can
+        rank queries differently.
+    query_combination : LogitCombination
+        How the candidates of a class, its queries or their sentences, become the class logit.
     batch_size : int
         Number of images per forward pass.
     device : Device
@@ -49,6 +65,8 @@ class ClassifierSettings:
     image_pooling: ImagePooling
     image_fit: ImageFit = ImageFit.LETTERBOX
     text_templates: tuple[str, ...] = ("{}",)
+    template_combination: TemplateCombination = TemplateCombination.ENSEMBLE
+    query_combination: LogitCombination = LogitCombination.MAX
     batch_size: int = 8
     device: Device = Device.AUTO
     precision: Precision = Precision.FLOAT32
@@ -105,6 +123,10 @@ class ClassifierSettings:
             image_pooling=required.image_pooling,
             image_fit=config_values.member("image_fit", ImageFit, required.image_fit),
             text_templates=config_values.texts("text_templates", required.text_templates),
+            template_combination=config_values.member(
+                "template_combination", TemplateCombination, required.template_combination
+            ),
+            query_combination=config_values.member("query_combination", LogitCombination, required.query_combination),
             batch_size=config_values.integer("batch_size", required.batch_size),
             device=config_values.member("device", Device, required.device),
             precision=config_values.member("precision", Precision, required.precision),

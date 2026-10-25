@@ -6,9 +6,11 @@ from numpy.typing import NDArray
 
 from ..array_types import FloatArray, IntArray
 from ..options import ScoreActivation
-from ..prompt import Prompt
+from ..prompt import EmbeddingLayout, Prompt
+from .class_logits import ClassLogits
 from .classification import Classification
 from .classification_record import ClassificationRecord
+from .logit_aggregation import LogitAggregation
 
 
 @dataclass(frozen=True, eq=False)
@@ -16,57 +18,88 @@ class ClassificationResult:
     """
     Model-independent class scores for one image.
 
-    Each class takes the logit of its best query, e.g. ``"puppy"`` for class ``"dog"``, and the activation of the
-    classifier turns the class logits into scores. Iterating yields every class in class-id order. The arrays are
-    read-only; ``query_logits`` is a copy of the given logits.
+    ``aggregation`` combines the logits of the embeddings of a class in two steps: ``template_combination`` turns the
+    sentence logits of each text query into one query logit (``SEPARATE`` keeps every sentence as a candidate of its
+    own, ``ENSEMBLE`` has one embedding per query already), then ``query_combination`` turns the candidates of the
+    class into the class logit. The activation of the classifier turns the class logits into scores. The matched query
+    of a class is its highest candidate, e.g. ``"puppy"`` for class ``"dog"``, and the matched template is the highest
+    sentence of that candidate; with a ``mean``, ``median`` or ``min`` query combination the class logit is not the
+    logit of the matched query.
+    Iterating yields every class in class-id order. The arrays are read-only; ``embedding_logits`` is a copy of the
+    given logits.
 
     Attributes
     ----------
-    prompt : Prompt
-        Prompt whose queries were scored.
-    query_logits : FloatArray
-        Logit of every query, shape (Q,).
+    aggregation : LogitAggregation
+        Layout of the prompt that was scored and how its logits are combined per class.
+    embedding_logits : FloatArray
+        Logit of every embedding, shape (E,).
     score_activation : ScoreActivation
         Activation turning class logits into scores.
     class_logits : FloatArray
-        Logit of the best query of every class, shape (C,).
+        Logit of every class, shape (C,).
+    matched_entry_ids : IntArray
+        Highest sentence of the highest candidate of every class, indexing ``layout.entries``, shape (C,).
     matched_query_ids : IntArray
-        Best query of every class, indexing ``prompt.queries``, shape (C,).
+        Query of ``matched_entry_ids``, indexing ``prompt.queries``, shape (C,).
     scores : FloatArray
         Score of every class in ``[0, 1]``, shape (C,).
 
     Raises
     ------
     ValueError
-        If ``query_logits`` does not hold one finite logit per prompt query.
+        If ``embedding_logits`` does not hold one finite logit per embedding of the layout.
     """
 
-    prompt: Prompt
-    query_logits: FloatArray
+    aggregation: LogitAggregation
+    embedding_logits: FloatArray
     score_activation: ScoreActivation
     class_logits: FloatArray = field(init=False)
+    matched_entry_ids: IntArray = field(init=False)
     matched_query_ids: IntArray = field(init=False)
     scores: FloatArray = field(init=False)
 
     def __post_init__(self) -> None:
-        expected_shape: tuple[int] = (len(self.prompt.queries),)
-        if self.query_logits.shape != expected_shape:
-            raise ValueError(f"query_logits must have shape {expected_shape}. got {self.query_logits.shape}")
-        if not bool(np.isfinite(self.query_logits).all()):
-            raise ValueError("query_logits must be finite.")
-        query_logits: FloatArray = self._read_only(self.query_logits.astype(np.float64, copy=True))
-        matched_query_ids: IntArray = np.array(
-            [query_ids[query_logits[query_ids].argmax()] for query_ids in self.prompt.class_query_ids],
-            dtype=np.int64,
-        )
-        class_logits: FloatArray = query_logits[matched_query_ids]
-        object.__setattr__(self, "query_logits", query_logits)
+        expected_shape: tuple[int] = (len(self.layout),)
+        if self.embedding_logits.shape != expected_shape:
+            raise ValueError(f"embedding_logits must have shape {expected_shape}. got {self.embedding_logits.shape}")
+        if not bool(np.isfinite(self.embedding_logits).all()):
+            raise ValueError("embedding_logits must be finite.")
+        embedding_logits: FloatArray = self._read_only(self.embedding_logits.astype(np.float64, copy=True))
+        class_logits: ClassLogits = self.aggregation.combine(embedding_logits)
+        matched_query_ids: IntArray = self.layout.entry_query_ids[class_logits.matched_entry_ids]
+        object.__setattr__(self, "embedding_logits", embedding_logits)
+        object.__setattr__(self, "matched_entry_ids", self._read_only(class_logits.matched_entry_ids))
         object.__setattr__(self, "matched_query_ids", self._read_only(matched_query_ids))
-        object.__setattr__(self, "class_logits", self._read_only(class_logits))
-        object.__setattr__(self, "scores", self._read_only(self.score_activation.apply(class_logits)))
+        object.__setattr__(self, "class_logits", self._read_only(class_logits.logits))
+        object.__setattr__(self, "scores", self._read_only(self.score_activation.apply(class_logits.logits)))
 
     def __len__(self) -> int:
         return len(self.prompt.class_names)
+
+    @property
+    def layout(self) -> EmbeddingLayout:
+        """
+        Embeddings of the prompt that were scored.
+
+        Returns
+        -------
+        EmbeddingLayout
+            Layout of ``aggregation``.
+        """
+        return self.aggregation.layout
+
+    @property
+    def prompt(self) -> Prompt:
+        """
+        Prompt whose classes were scored.
+
+        Returns
+        -------
+        Prompt
+            Prompt of ``layout``.
+        """
+        return self.layout.prompt
 
     def __iter__(self) -> Iterator[Classification]:
         for class_id in range(len(self)):
@@ -108,7 +141,7 @@ class ClassificationResult:
         Returns
         -------
         Classification
-            Score, logit and matched query of the class.
+            Score, logit, matched query and matched template of the class.
 
         Raises
         ------
@@ -123,6 +156,7 @@ class ClassificationResult:
             score=float(self.scores[class_id]),
             logit=float(self.class_logits[class_id]),
             matched_query=self.prompt.queries[int(self.matched_query_ids[class_id])],
+            matched_template=self.layout.entries[int(self.matched_entry_ids[class_id])].template,
         )
 
     def score_of(self, class_name: str) -> float:
@@ -204,9 +238,10 @@ class ClassificationResult:
         Classes whose logit reaches a threshold, independent of the other classes of the prompt.
 
         A softmax score (CLIP) is relative: one class always takes most of the score, even when the image shows none
-        of the classes. The logit is the scaled cosine similarity of the image and the best query of the class, so a
-        threshold on it, chosen on real data, rejects images matching no class and is comparable across prompts of
-        the same classifier.
+        of the classes. The logit combines the scaled cosine similarities of the image and the queries of the class, so
+        a threshold on it, chosen on real data, rejects images matching no class and is comparable across prompts of
+        the same classifier, templates and combinations. A ``max`` over more candidates is biased upward, so classes
+        and prompts with many more queries or sentences per class need a higher threshold.
 
         Parameters
         ----------

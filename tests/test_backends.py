@@ -147,13 +147,13 @@ def test_query_logits_match_the_model_logits(checkpoint_directory: Path, name: s
     results: list[ClassificationResult] = build_classifier(checkpoint_directory, name).classify_images(
         IMAGES, Prompt.from_class_names(CLASS_NAMES)
     )
-    np.testing.assert_allclose(np.stack([result.query_logits for result in results]), expected.numpy(), atol=1e-4)
+    np.testing.assert_allclose(np.stack([result.embedding_logits for result in results]), expected.numpy(), atol=1e-4)
     scores: FloatArray = results[0].scores
     match BACKENDS[name]:
         case ClassifierBackend.CLIP:
             assert scores.sum() == pytest.approx(1.0)
         case ClassifierBackend.SIGLIP:
-            np.testing.assert_allclose(scores, 1.0 / (1.0 + np.exp(-results[0].query_logits)))
+            np.testing.assert_allclose(scores, 1.0 / (1.0 + np.exp(-results[0].embedding_logits)))
 
 
 def test_clip_patch_mean_projects_the_mean_of_normalized_patch_tokens(checkpoint_directory: Path) -> None:
@@ -213,7 +213,7 @@ def test_visual_query_matches_its_own_reference(checkpoint_directory: Path, name
     )
     results: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt)
     assert [result.top.class_id for result in results] == [0, 1, 2]
-    self_logits: FloatArray = np.diagonal(np.stack([result.query_logits for result in results]))
+    self_logits: FloatArray = np.diagonal(np.stack([result.embedding_logits for result in results]))
     np.testing.assert_allclose(self_logits, self_logits[0], rtol=1e-5)
 
 
@@ -235,8 +235,8 @@ def test_classify_embeddings_matches_classify_images(checkpoint_directory: Path,
     )
     from_images: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt)
     np.testing.assert_allclose(
-        np.stack([result.query_logits for result in from_embeddings]),
-        np.stack([result.query_logits for result in from_images]),
+        np.stack([result.embedding_logits for result in from_embeddings]),
+        np.stack([result.embedding_logits for result in from_images]),
         atol=1e-5,
     )
 
@@ -263,7 +263,7 @@ def test_tiling_never_lowers_the_whole_image_logits(checkpoint_directory: Path, 
     whole: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt)
     tiled: list[ClassificationResult] = classifier.classify_images(IMAGES, prompt, ImageTiling(grid_size=2))
     for whole_result, tiled_result in zip(whole, tiled, strict=True):
-        assert np.all(tiled_result.query_logits >= whole_result.query_logits - 1e-5)
+        assert np.all(tiled_result.embedding_logits >= whole_result.embedding_logits - 1e-5)
 
 
 @pytest.mark.parametrize("name", list(BACKENDS))
