@@ -2,34 +2,20 @@
 
 ## Overview
 
-Model-independent classification output shared by every classifier. A `ClassificationResult` keeps the logit of every
-prompt embedding of one image and reduces them to the candidates of every class by the `similarity` steps of the
-aggregation, after the `embedding` steps the layout went through. The `ScoreActivation` of the backend turns the
-candidate logits into scores (a softmax over every candidate for CLIP, independent sigmoids for SigLIP), and each
-class takes its best candidate, as `ClassScores` computes it. Its arrays are read-only. A `LogitAggregation` is
-prepared once per prompt; every step is a `LogitReduction` that sorts the logits by group and reduces the consecutive
-`LogitSegments` vectorized, so scoring an image takes a few NumPy calls. Every logit keeps the embedding of the
-highest logit it came from, reported as the matched query and template. A `LogitAggregation` reads only the
-`EntryLabel`s of the embeddings, so logits stored with their labels are scored again with other `similarity` steps
-without the prompt or the model.
-
-A softmax score is relative to the other classes of the prompt, so CLIP always gives some class most of the score,
-even when the image shows none of them. To reject such images, add a background class (e.g. `"something else"`) or
-threshold the logit with `filter_by_logit`, which does not depend on the other classes; choose the threshold on real
-data, keeping in mind that a `max` over more embeddings per class is biased upward. `to_records` converts a result to flat, JSON-serializable `ClassificationRecord` dictionaries.
+Model-independent classification output shared by every classifier: the logits of every prompt embedding of one image, reduced to class scores by the aggregation and the score activation of the backend. Logits stored with their labels can be scored again with other aggregation steps without the prompt or the model.
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [classification_result.py](./classification_result.py) | `ClassificationResult`: embedding logits, class logits, matched queries and templates and scores of one image; top class, top-k, score and logit thresholds, lookup by name and records. |
-| [logit_aggregation.py](./logit_aggregation.py) | `LogitAggregation`: entry labels of a prompt and the reductions of its `similarity` steps, reducing the embedding logits of one image to candidate logits. |
-| [class_scores.py](./class_scores.py) | `ClassScores`: score, logit and matched embedding of every class of one image from its embedding logits. |
-| [logit_reduction.py](./logit_reduction.py) | `LogitReduction`: one `similarity` step, reducing every group of logits and keeping the embedding of its highest logit. |
-| [logit_segments.py](./logit_segments.py) | `LogitSegments`: consecutive runs of a logit vector, reduced (`max`, `mean`, `median`, `min`, `logsumexp`) and arg-maxed run by run. |
-| [candidate_logits.py](./candidate_logits.py) | `CandidateLogits`: logits of the candidates left for one image, ordered by class, and the embedding behind each. |
-| [classification.py](./classification.py) | `Classification`: one class (id, name, score, logit, matched query and template), yielded by iterating a result. |
-| [classification_record.py](./classification_record.py) | `ClassificationRecord`: flat, JSON-serializable form of a `Classification`. |
+| [classification_result.py](./classification_result.py) | `ClassificationResult`, the class scores of one image, with ranking, thresholds and records. |
+| [logit_aggregation.py](./logit_aggregation.py) | `LogitAggregation`, which reduces the embedding logits of one image to candidate logits. |
+| [class_scores.py](./class_scores.py) | `ClassScores`, the score, logit and matched embedding of every class. |
+| [logit_reduction.py](./logit_reduction.py) | `LogitReduction`, one `similarity` step. |
+| [logit_segments.py](./logit_segments.py) | `LogitSegments`, consecutive runs of a logit vector reduced run by run. |
+| [candidate_logits.py](./candidate_logits.py) | `CandidateLogits`, the logits of the candidates left for one image. |
+| [classification.py](./classification.py) | `Classification`, one class, yielded by iterating a result. |
+| [classification_record.py](./classification_record.py) | `ClassificationRecord`, the JSON-serializable form of a `Classification`. |
 
 ## Examples
 

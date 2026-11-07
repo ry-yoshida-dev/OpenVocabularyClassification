@@ -27,6 +27,9 @@ class ClassificationResult:
     Iterating yields every class in class-id order. The arrays are read-only; ``embedding_logits`` is a copy of the
     given logits.
 
+    A softmax score (CLIP) always favors some class, even for an image showing none of them; add a background class
+    such as ``"something else"`` to the prompt, or reject such images with ``filter_by_logit``.
+
     Attributes
     ----------
     layout : EmbeddingLayout

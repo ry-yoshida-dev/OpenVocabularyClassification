@@ -2,22 +2,15 @@
 
 ## Overview
 
-Prompt embeddings cached at the granularity they depend on. A sentence embedding depends only on its sentence (a
-text query filled into one template) and a reference embedding only on its reference image, so each is computed
-once; `QueryEmbeddingStore` assembles the embeddings of an `EmbeddingLayout` from these caches, whichever templates
-and aggregation the layout uses. Sentence embeddings are kept in a `LeastRecentlyUsedMapping` bounded by
-`sentence_cache_capacity`, so memory stays bounded when text queries or templates keep changing (every cached
-embedding owns its storage, so eviction frees it);
-reference embeddings are kept in a `WeakKeyDictionary` so they are dropped together with their reference. Every
-lookup holds a lock, so threads sharing one classifier keep the caches consistent and embed each query once.
+Thread-safe prompt embeddings cached per sentence (a text query filled into one template) and per reference image, so prompts that share them do not recompute them.
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [core.py](./core.py) | `EmbeddingCache`: thread-safe; computes missing keys in one call, stores values in a given mapping and returns them in key order. |
-| [least_recently_used.py](./least_recently_used.py) | `LeastRecentlyUsedMapping`: mapping bounded to a capacity, evicting the least recently read or written entry. |
-| [store.py](./store.py) | `QueryEmbeddingStore`: normalized embeddings of a prompt layout in embedding-id order, or of bare text queries ensembled over templates; averages the members of each entry, a sentence or a visual query (the average of its references) each. |
+| [core.py](./core.py) | `EmbeddingCache`, thread-safe embeddings computed per key and kept for later prompts. |
+| [least_recently_used.py](./least_recently_used.py) | `LeastRecentlyUsedMapping`, a mapping bounded to a capacity. |
+| [store.py](./store.py) | `QueryEmbeddingStore`, which assembles prompt and text embeddings from the caches. |
 
 ## Examples
 

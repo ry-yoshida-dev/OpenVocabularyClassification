@@ -26,7 +26,8 @@ class SiglipFamilyClassifier[
     sends the mean through the head with uniform attention weights (``UniformAttentionPooling``). Text is lowercased,
     as SigLIP 2 was trained and the SigLIP tokenizer does, padded to the full text length and encoded without an
     attention mask, as the text towers were trained. Logits are scaled cosine similarities plus a learned bias, and
-    are turned into scores by a sigmoid per class.
+    are turned into scores by a sigmoid per class. SigLIP was trained on captions, so short phrases often get low
+    absolute probabilities even when they rank first; compare logits or ranks, or choose thresholds on real data.
 
     Subclasses run the vision tower on the preprocessed images of their architecture.
     """

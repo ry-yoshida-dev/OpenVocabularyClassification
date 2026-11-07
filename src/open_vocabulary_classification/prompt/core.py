@@ -23,7 +23,9 @@ class Prompt:
         })
 
     The model scores every query against the image; the classifier settings say how the logits of the queries of a
-    class are combined into the class logit, and the highest query of a class is reported as matched.
+    class are combined into the class logit, and the highest query of a class is reported as matched. Text and
+    visual logits come from different distributions (image-text versus image-image similarity), so check scores on
+    real data when mixing them.
 
     Attributes
     ----------

@@ -2,26 +2,22 @@
 
 ## Overview
 
-Unit tests that run without downloading model weights. Backend tests build tiny randomly initialized CLIP, MetaCLIP 2,
-SigLIP and SigLIP 2 NaFlex checkpoints (`conftest.py`) and compare the classifiers with the `transformers` models.
-
-Tests marked `pretrained` download real weights and are skipped unless `--run-pretrained` is given; CI runs them
-weekly and on manual dispatch.
+Unit tests that run without downloading model weights. Tests marked `pretrained` download real weights and are skipped unless `--run-pretrained` is given.
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [conftest.py](./conftest.py) | Session fixture saving tiny checkpoints with their processors and tokenizers, and a CLIP checkpoint with its tokenizer only; the `--run-pretrained` option. |
-| [test_backends.py](./test_backends.py) | Architecture selection, OpenAI CLIP preprocessing of a checkpoint without an image processor, native pooling, logits and text embeddings equal to the `transformers` models, CLIP patch mean, NaFlex padding invariance, visual queries, classification from embeddings, tiling, letterboxing with the processor mean color (images and references, none for NaFlex), bfloat16 and text length limits. |
-| [test_pretrained.py](./test_pretrained.py) | Real CLIP, SigLIP, SigLIP 2 and SigLIP 2 NaFlex weights: embeddings and logits equal to `transformers`, solid colors named and found by text search. |
+| [conftest.py](./conftest.py) | Tiny randomly initialized checkpoints and the `--run-pretrained` option. |
+| [test_backends.py](./test_backends.py) | Backends compared with the `transformers` models on tiny checkpoints. |
+| [test_pretrained.py](./test_pretrained.py) | Backends with real weights. |
 | [test_cli.py](./test_cli.py) | Command-line prompt parsing, image discovery, text and JSON lines output, aggregation steps, preset listing and argument errors. |
 | [test_image_tiling.py](./test_image_tiling.py) | Tile sizes, overlap, order and validation. |
 | [test_letterbox.py](./test_letterbox.py) | Centered square padding, square images unchanged and fill color validation. |
 | [test_uniform_attention_pooling.py](./test_uniform_attention_pooling.py) | Patch mean through the MAP head equal to the head with uniform attention, padding excluded. |
-| [test_classifier.py](./test_classifier.py) | Shared mini-batching, streaming, tiling, classification from embeddings, text and prompt embeddings, per-sentence templates combined as the settings say, RGB conversion with transparency over white, letterboxing of images and tiles, scoring and output shape checks. |
-| [test_classification_result.py](./test_classification_result.py) | Aggregation steps at both timings and their validation, logsumexp, visual queries, matched query and template per class, softmax and sigmoid scores, ranking, score and logit filtering, lookup, records and read-only arrays. |
-| [test_query_embedding_store.py](./test_query_embedding_store.py) | Template ensembling, per-sentence and representative embeddings, caching per sentence and reference, least-recently-used eviction, reference averaging, release, query order and concurrent use. |
+| [test_classifier.py](./test_classifier.py) | Shared classifier behavior: batching, streaming, tiling, image conversion and scoring. |
+| [test_classification_result.py](./test_classification_result.py) | `ClassificationResult`, aggregation steps and scores. |
+| [test_query_embedding_store.py](./test_query_embedding_store.py) | `QueryEmbeddingStore` caching and assembly. |
 | [test_least_recently_used.py](./test_least_recently_used.py) | Bounded mapping eviction order, refresh on access and capacity validation. |
 | [test_prompt.py](./test_prompt.py) | Prompts with text, visual and mixed queries: validation, kinds and query-to-class mapping. |
 | [test_text_templates.py](./test_text_templates.py) | Template filling and placeholder validation. |

@@ -2,12 +2,11 @@
 
 ## Overview
 
-Concrete CLIP-family classifiers. Each loads its model class; everything else comes from `ClipFamilyClassifier` in
-[core.py](../core.py).
+Concrete CLIP-family classifiers, one per model class.
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [clip.py](./clip.py) | `ClipClassifier`: `CLIPModel`, for OpenAI CLIP, OpenCLIP, MetaCLIP and DFN CLIP weights. |
-| [metaclip2.py](./metaclip2.py) | `MetaClip2Classifier`: `MetaClip2Model`, multilingual MetaCLIP 2. |
+| [clip.py](./clip.py) | `ClipClassifier`, for OpenAI CLIP, OpenCLIP, MetaCLIP and DFN CLIP weights. |
+| [metaclip2.py](./metaclip2.py) | `MetaClip2Classifier`, multilingual MetaCLIP 2. |

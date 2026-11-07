@@ -9,7 +9,7 @@ Runnable scripts using the package. To classify a directory from the command lin
 
 | Component | Description |
 | --------- | ----------- |
-| [search_images.py](./search_images.py) | Embeds a directory once with `iter_embed_images`, searches it by text with `embed_texts`, and classifies the same embeddings with two prompts through `classify_embeddings`. |
+| [search_images.py](./search_images.py) | Embeds a directory once, searches it by text, and classifies the same embeddings with two prompts. |
 
 ## Examples
 

@@ -2,20 +2,15 @@
 
 ## Overview
 
-Everything needed to load and run a classifier, identical for every backend, and the readers turning configuration
-files into it. `ClassifierSettings` validates its fields on construction and `build()` loads the classifier of its
-backend. `ClassifierSettings.from_mapping` reads plain values (enums by value), so any parsed YAML or JSON section
-works; `PresetCatalog` reads the presets shipped under [config/](../config/README.md) and YAML files in the same
-format. Malformed configuration (unknown or missing keys, wrong types, unknown enum values) fails before any model is
-loaded.
+Everything needed to load and run a classifier, identical for every backend, and the readers turning configuration into it: `ClassifierSettings.from_mapping` for any parsed YAML or JSON section, and `PresetCatalog` for the presets under [config/](../config/README.md) and YAML files in the same format.
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [core.py](./core.py) | `ClassifierSettings`: backend, weights, image pooling, image fit, text templates, aggregation steps, batch size, device and precision; `from_mapping` and `build()`. |
-| [presets.py](./presets.py) | `PresetCatalog`: lists and loads packaged presets (`clip/openai_vit_b16`) and preset-format YAML files. |
-| [config_values.py](./config_values.py) | `ConfigValues`: typed, validating access to strings, string lists, integers and enum values of a configuration section. |
+| [core.py](./core.py) | `ClassifierSettings`, everything needed to load and run a classifier. |
+| [presets.py](./presets.py) | `PresetCatalog`, which lists and loads presets and preset-format YAML files. |
+| [config_values.py](./config_values.py) | `ConfigValues`, typed access to the values of a configuration section. |
 
 ## Examples
 

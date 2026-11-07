@@ -9,19 +9,19 @@ presets of every supported model, and the backends implementing the interface.
 
 | Component | Description |
 | --------- | ----------- |
-| [classifier.py](./classifier.py) | `OpenVocabularyClassifier`: runtime-independent base classifying images (eagerly, streamed or tiled) and precomputed embeddings, embedding images, texts and prompts, with mini-batching, RGB conversion over a white background (stretching high-bit-depth images), letterboxing, tiled views batched across images, and shared scoring. |
-| [prepared_prompt.py](./prepared_prompt.py) | `PreparedPrompt`: embeddings and logit aggregation of a prompt, cached by the classifier per prompt and settings. |
-| [letterbox.py](./letterbox.py) | `Letterbox`: pads images to a centered square so square model inputs show the whole image undistorted. |
-| [image_tiling.py](./image_tiling.py) | `ImageTiling`: overlapping tile grid, plus the whole image, classified view by view so small objects are found. |
-| [settings/](./settings/README.md) | `ClassifierSettings` with `from_mapping` and `build()`, and `PresetCatalog` loading packaged presets and YAML files. |
-| [options/](./options/README.md) | `ClassifierBackend`, `ImagePooling`, `ImageFit`, `ScoreActivation`, `Device` and `Precision`: options composing `ClassifierSettings`. |
-| [prompt/](./prompt/README.md) | `Prompt` mapping each class name to its text and visual queries, the query types, `TextTemplates` and `VisualReference`. |
-| [result/](./result/README.md) | `ClassificationResult`, `Classification`, its JSON-serializable `ClassificationRecord`, `ClassScores` and the vectorized `LogitAggregation`, which scores stored logits again from their labels. |
-| [cache/](./cache/README.md) | Thread-safe prompt embeddings cached per sentence and per visual reference. |
-| [runtime/](./runtime/README.md) | `TorchRuntime`: device, precision, model preparation and input transfer for PyTorch-backed classifiers. |
-| [backends/](./backends/README.md) | CLIP-family (CLIP, OpenCLIP, MetaCLIP, MetaCLIP 2, DFN CLIP) and SigLIP-family (SigLIP, SigLIP 2, SigLIP 2 NaFlex) classifiers. |
+| [classifier.py](./classifier.py) | `OpenVocabularyClassifier`, the runtime-independent base classifying images and embeddings and embedding images, texts and prompts. |
+| [prepared_prompt.py](./prepared_prompt.py) | `PreparedPrompt`, the embeddings and logit aggregation of a prompt. |
+| [letterbox.py](./letterbox.py) | `Letterbox`, which pads images to a centered square. |
+| [image_tiling.py](./image_tiling.py) | `ImageTiling`, an overlapping tile grid for finding small objects. |
+| [settings/](./settings/README.md) | `ClassifierSettings` and `PresetCatalog`. |
+| [options/](./options/README.md) | Options composing `ClassifierSettings`. |
+| [prompt/](./prompt/README.md) | `Prompt`, its query types, and text templates. |
+| [result/](./result/README.md) | `ClassificationResult` and the scoring of logits. |
+| [cache/](./cache/README.md) | Prompt embedding caches. |
+| [runtime/](./runtime/README.md) | Execution of PyTorch-backed models. |
+| [backends/](./backends/README.md) | Concrete classifiers, one sub-package per backend. |
 | [config/](./config/README.md) | YAML presets of every backend, loaded by `PresetCatalog`. |
-| [cli/](./cli/README.md) | `open-vocabulary-classify` command classifying image files and directories by text and reference images. |
+| [cli/](./cli/README.md) | The `open-vocabulary-classify` command. |
 | [array_types.py](./array_types.py) | NumPy array aliases (`FloatArray`, `IntArray`, `BoolArray`). |
 
 ## Examples
@@ -30,13 +30,7 @@ presets of every supported model, and the backends implementing the interface.
 classifier = PresetCatalog.load(ClassifierBackend.CLIP, "openai_vit_b16").build()
 
 result = classifier.classify(image, Prompt.from_class_names(("cat", "dog")))
-results = classifier.classify_images(images, Prompt.from_texts({"dog": ("dog", "puppy"), "cat": ("cat",)}))
 tiled_results = classifier.classify_images(images, prompt, ImageTiling(grid_size=3))
 for result in classifier.iter_classify_images(lazily_loaded_images, prompt):
     ...
-
-embeddings = classifier.embed_images(images)
-results = classifier.classify_embeddings(embeddings, prompt)
-tiled_results = classifier.classify_embeddings(classifier.embed_images(images, ImageTiling()), prompt)
-similarities = embeddings @ classifier.embed_texts(["a dog on a beach"]).T
 ```

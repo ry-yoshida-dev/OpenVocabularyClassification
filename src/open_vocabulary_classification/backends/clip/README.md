@@ -2,26 +2,12 @@
 
 ## Overview
 
-CLIP-architecture models through `transformers` (`ClassifierBackend.CLIP`). `ClipArchitecture` picks the classifier
-from the checkpoint's `model_type`: `clip` covers OpenAI CLIP, OpenCLIP weights converted to `transformers` (LAION,
-DataComp, Apple DFN) and MetaCLIP; `metaclip_2` covers MetaCLIP 2. A checkpoint without `preprocessor_config.json`
-(most Apple DFN weights) is preprocessed as OpenAI CLIP: bicubic resize of the shorter side, center crop to the
-vision tower's `image_size` and the OpenAI CLIP mean and standard deviation.
-
-The vision tower prepends a class token to the patch tokens and ends in a layer norm and a linear projection:
-
-| `ImagePooling` | Image embedding |
-| -------------- | --------------- |
-| `CLASS_TOKEN` | `visual_projection(post_layernorm(class_token))`, as CLIP was trained. |
-| `PATCH_MEAN` | `visual_projection(mean(post_layernorm(patch_tokens)))`, global average pooling with the class token excluded. |
-
-Text is padded to the full context of the text tower (77 tokens) and a text query filled into a template must fit in
-it. Logits have no bias and are scored with a softmax over the prompt classes.
+CLIP-architecture models through `transformers` (`ClassifierBackend.CLIP`): OpenAI CLIP, OpenCLIP weights converted to `transformers` (LAION, DataComp, Apple DFN) and MetaCLIP (`model_type` `clip`), and MetaCLIP 2 (`metaclip_2`). Images are pooled by the class token or the patch mean, and scored with a softmax over the classes.
 
 ## Components
 
 | Component | Description |
 | --------- | ----------- |
-| [core.py](./core.py) | `ClipFamilyClassifier`: processor loading, image poolings, text encoding and logit scale shared by every CLIP-architecture model. |
+| [core.py](./core.py) | `ClipFamilyClassifier`, the shared base of CLIP-architecture models. |
 | [classifier/](./classifier/README.md) | `ClipClassifier` (`clip`) and `MetaClip2Classifier` (`metaclip_2`). |
-| [architecture.py](./architecture.py) | `ClipArchitecture`: architecture of a checkpoint and the classifier that loads it. |
+| [architecture.py](./architecture.py) | `ClipArchitecture`, the architecture of a checkpoint. |
